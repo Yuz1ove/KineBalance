@@ -187,7 +187,7 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
 
   return (
     <SceneShell
-      eyebrow="Scene 02 · Before dose"
+      eyebrow="場景 02 · 服藥前評估"
       title="服藥前，留下 20 秒動作快照"
       description="左右交替點擊。系統分開記錄測試有效性與動作特徵，不診斷疾病狀態，也不阻擋或延誤依醫囑用藥。"
       aside={

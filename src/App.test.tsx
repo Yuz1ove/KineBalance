@@ -3,10 +3,10 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import App from './App'
 
-describe('DoseLoop PD prototype', () => {
+describe('MotionCare prototype', () => {
   it('renders the safe medication schedule language', () => {
     render(<App />)
-    expect(screen.getByRole('heading', { name: '今天，照著熟悉的節奏' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '今日照護總覽' })).toBeInTheDocument()
     expect(screen.getAllByText('已發藥').length).toBeGreaterThan(0)
     expect(screen.getByText(/不等於已吞下藥物/)).toBeInTheDocument()
   })

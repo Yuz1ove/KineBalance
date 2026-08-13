@@ -157,7 +157,7 @@ export function DispenseScene({ onNext }: DispenseSceneProps) {
 
   return (
     <SceneShell
-      eyebrow="Scene 03 · Verified dispense"
+      eyebrow="場景 03 · 實體發藥核對"
       title="每次交付，都經過實體核對"
       description="模型藥物依序進入核對盤；只有重量、影像、卡藥或重複出藥風險，才能暫停本次自動交付並等待照顧者人工確認。"
       aside={
@@ -186,7 +186,7 @@ export function DispenseScene({ onNext }: DispenseSceneProps) {
           <div className="machine-toolbar">
             <div>
               <span className={`live-dot ${running ? 'pulsing' : ''}`} />
-              <strong>DoseLoop Home · DL-01</strong>
+              <strong>MotionCare Home · MC-01</strong>
             </div>
             <span>2D 動態驗證圖 · GSAP timeline</span>
           </div>

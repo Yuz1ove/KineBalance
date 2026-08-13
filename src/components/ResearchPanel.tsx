@@ -13,7 +13,7 @@ export function ResearchPanel({ open, onClose }: ResearchPanelProps) {
       <aside className="research-drawer" role="dialog" aria-modal="true" aria-labelledby="research-title">
         <header>
           <div>
-            <p className="eyebrow">Evidence, with limits</p>
+            <p className="eyebrow">臨床證據與限制</p>
             <h2 id="research-title">研究依據與誠實邊界</h2>
           </div>
           <button className="icon-button" onClick={onClose} aria-label="關閉">
@@ -25,7 +25,7 @@ export function ResearchPanel({ open, onClose }: ResearchPanelProps) {
           <FlaskConical aria-hidden="true" />
           <p>
             文獻支持數位動作量測與居家長期追蹤的可行性；目前尚未證明
-            DoseLoop PD 能改善臨床結果。
+            動序 MotionCare 能改善臨床結果。
           </p>
         </div>
 

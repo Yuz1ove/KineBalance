@@ -1,4 +1,12 @@
-import { Check } from 'lucide-react'
+import {
+  Activity,
+  ChartNoAxesCombined,
+  Check,
+  ClipboardCheck,
+  Clock3,
+  MousePointerClick,
+  UsersRound
+} from 'lucide-react'
 import type { SceneId } from '../types'
 
 export interface SceneDefinition {
@@ -15,11 +23,21 @@ interface SceneNavProps {
 }
 
 export function SceneNav({ scenes, current, visited, onSelect }: SceneNavProps) {
+  const sceneIcons: Record<SceneId, typeof Clock3> = {
+    schedule: Clock3,
+    tap: MousePointerClick,
+    dispense: ClipboardCheck,
+    followup: Activity,
+    trend: ChartNoAxesCombined,
+    review: UsersRound
+  }
+
   return (
     <nav className="scene-nav" aria-label="六個體驗場景">
       <ol>
         {scenes.map((scene, index) => {
           const complete = visited.has(scene.id) && index !== current
+          const Icon = sceneIcons[scene.id]
           return (
             <li key={scene.id}>
               <button
@@ -29,12 +47,13 @@ export function SceneNav({ scenes, current, visited, onSelect }: SceneNavProps) 
                 aria-label={`前往場景：${scene.title}`}
               >
                 <span className="step-number">
-                  {complete ? <Check aria-label="已瀏覽" /> : String(index + 1).padStart(2, '0')}
+                  <Icon aria-hidden="true" />
                 </span>
                 <span>
                   <small>{scene.short}</small>
                   <strong>{scene.title}</strong>
                 </span>
+                {complete ? <Check className="visited-check" aria-label="已瀏覽" /> : null}
               </button>
             </li>
           )

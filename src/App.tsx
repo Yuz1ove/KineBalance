@@ -3,9 +3,10 @@ import {
   ArrowLeft,
   ArrowRight,
   BookOpenText,
+  Circle,
   Menu,
   ShieldCheck,
-  Sparkles,
+  Users,
   X
 } from 'lucide-react'
 import { ResearchPanel } from './components/ResearchPanel'
@@ -74,22 +75,21 @@ function App() {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <a className="brand" href="#main" aria-label="DoseLoop PD 首頁">
-          <span className="brand-mark" aria-hidden="true">
-            <i />
-            <i />
-            <i />
-          </span>
+        <a className="brand" href="#main" aria-label="動序 MotionCare 首頁">
           <span>
-            <strong>DoseLoop <em>PD</em></strong>
-            <small>可信發藥 × 居家動作追蹤</small>
+            <strong>動序 <em>MotionCare</em></strong>
+            <small>用藥節律 × 動作反應追蹤</small>
           </span>
         </a>
-        <div className="prototype-badge">
-          <Sparkles />
-          2026 AI 創新獎 · 概念原型
+        <div className="header-date" aria-label="目前展示日期">
+          2026.08.13 <span>·</span> 星期四
         </div>
         <div className="header-actions">
+          <div className="caregiver-status" aria-label="家屬連線正常">
+            <Circle aria-hidden="true" />
+            <Users aria-hidden="true" />
+            家屬連線正常
+          </div>
           <button className="research-button" onClick={() => setResearchOpen(true)}>
             <BookOpenText />
             研究依據
@@ -118,7 +118,7 @@ function App() {
         <aside className="sidebar">
           <SceneNav scenes={scenes} current={current} visited={visited} onSelect={selectScene} />
           <div className="sidebar-footnote">
-            <span>Prototype 0.1</span>
+            <span>概念原型資料</span>
             <p>所有藥物、分數與趨勢數據均為概念展示或模擬資料。</p>
           </div>
         </aside>
@@ -143,7 +143,7 @@ function App() {
       </div>
 
       <footer className="app-footer">
-        <span>DoseLoop PD · 參賽概念原型</span>
+        <span>動序 MotionCare · 概念原型</span>
         <p>本系統用於長期追蹤與共同複核，不進行診斷、不自動調藥，也不確認患者已實際吞服藥物。</p>
       </footer>
 

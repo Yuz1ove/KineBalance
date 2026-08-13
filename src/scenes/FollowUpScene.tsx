@@ -45,7 +45,7 @@ export function FollowUpScene({ onNext }: FollowUpSceneProps) {
 
   return (
     <SceneShell
-      eyebrow="Scene 04 · After dose"
+      eyebrow="場景 04 · 服藥後追蹤"
       title="約 60 分鐘後，再看一次變化"
       description="服藥後測試形成同一時段的前後對照。提醒可調整，但未完成測試不會阻擋本次或下一次正常發藥。"
       aside={<StatusPill tone="teal" icon="success">14:02 已發藥</StatusPill>}
