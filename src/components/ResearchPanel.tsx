@@ -25,7 +25,7 @@ export function ResearchPanel({ open, onClose }: ResearchPanelProps) {
           <FlaskConical aria-hidden="true" />
           <p>
             文獻支持數位動作量測與居家長期追蹤的可行性；目前尚未證明
-            動序 MotionCare 能改善臨床結果。
+            KineBalance 能改善臨床結果。
           </p>
         </div>
 

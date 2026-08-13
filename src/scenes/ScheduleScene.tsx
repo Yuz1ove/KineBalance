@@ -38,7 +38,7 @@ export function ScheduleScene({ onNext }: ScheduleSceneProps) {
     <SceneShell
       eyebrow="今日照護 · 2026.08.13"
       title="今日照護總覽"
-      description="處方與發藥時間來自醫師核准內容及安全規則。動序 MotionCare 只協助記錄、提醒與複核。"
+      description="處方與發藥時間來自醫師核准內容及安全規則。KineBalance 只協助記錄、提醒與複核。"
       aside={<StatusPill tone="teal" icon="safe">家屬連線正常</StatusPill>}
     >
       <section className="care-schedule" aria-labelledby="care-schedule-title">
@@ -76,7 +76,7 @@ export function ScheduleScene({ onNext }: ScheduleSceneProps) {
 
       <section className="operational-status" aria-label="系統運作狀態">
         <div><Activity aria-hidden="true" /><span><small>最近一次動作測試</small><strong>今日 11:02 · 已記錄</strong></span></div>
-        <div><Server aria-hidden="true" /><span><small>發藥設備</small><strong>MotionCare Home · 連線正常</strong></span></div>
+        <div><Server aria-hidden="true" /><span><small>發藥設備</small><strong>KineBalance Home · KB-01</strong></span></div>
         <div><HeartHandshake aria-hidden="true" /><span><small>家屬照護連結</small><strong>最近同步 1 分鐘前</strong></span></div>
       </section>
 

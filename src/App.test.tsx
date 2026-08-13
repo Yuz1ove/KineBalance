@@ -3,7 +3,15 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import App from './App'
 
-describe('MotionCare prototype', () => {
+describe('KineBalance prototype', () => {
+  it('renders the KineBalance brand consistently', () => {
+    render(<App />)
+    expect(screen.getByRole('link', { name: 'KineBalance 首頁' })).toHaveTextContent('KineBalance')
+    expect(screen.getByText('用藥節律 × 動作反應追蹤')).toBeInTheDocument()
+    expect(screen.getByText('KineBalance Home · KB-01')).toBeInTheDocument()
+    expect(screen.getByText('KineBalance · 概念原型')).toBeInTheDocument()
+  })
+
   it('renders the safe medication schedule language', () => {
     render(<App />)
     expect(screen.getByRole('heading', { name: '今日照護總覽' })).toBeInTheDocument()

@@ -145,11 +145,6 @@ svg {
   letter-spacing: -0.02em;
 }
 
-.brand strong em {
-  color: var(--teal-700);
-  font-style: normal;
-}
-
 .brand small {
   color: var(--ink-3);
   font-size: 11px;
@@ -3606,7 +3601,7 @@ svg {
   }
 }
 
-/* MotionCare clinical design system */
+/* KineBalance clinical design system */
 :root {
   color: #15283a;
   background: #f7f8f6;
@@ -3684,18 +3679,12 @@ a:focus-visible {
 }
 
 .brand strong {
-  font-family: 'Noto Sans TC', sans-serif;
+  color: inherit;
+  font-family: 'Inter', sans-serif;
   font-size: 20px;
   font-weight: 700;
-  letter-spacing: 0;
-}
-
-.brand strong em {
-  color: #a9c1d2;
-  font-family: 'Inter', sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
 }
 
 .brand small {
@@ -4378,10 +4367,6 @@ a:focus-visible {
 
   .brand strong {
     font-size: 18px;
-  }
-
-  .brand strong em {
-    font-size: 12px;
   }
 
   .header-date,

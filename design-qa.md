@@ -1,4 +1,4 @@
-# MotionCare Design QA
+# KineBalance Design QA
 
 ## Comparison evidence
 
@@ -8,10 +8,10 @@
 
 ## Pass 1 — implementation corrections
 
-- Typography: replaced the generic Manrope treatment with Noto Sans TC for Chinese content and Inter for dates, times, and numeric metrics. Increased body and control sizing and reduced aggressive display-letter spacing.
+- Typography: uses Noto Sans TC for Chinese content and Inter for the KineBalance brand, dates, times, and numeric metrics. Increased body and control sizing and reduced aggressive display-letter spacing.
 - Layout: replaced the two generic home cards with the selected clinical schedule table, highlighted current time slot, focused task area, and operational-status row.
 - Color and surfaces: removed decorative gradients, heavy shadows, oversized radii, and excessive pill styling. Mapped the interface to porcelain, ink navy, clinical blue, mineral green, and restrained amber.
-- Navigation and brand: replaced the old identity with 動序 MotionCare and a dark clinical sidebar using one consistent Lucide icon family.
+- Navigation and brand: uses the KineBalance identity with a dark clinical sidebar and one consistent Lucide icon family.
 - Copy: removed remaining English scene labels and retained explicit prescription, non-diagnostic, non-blocking, and “dispensed is not swallowed” safety boundaries.
 
 ## Pass 2 — final fidelity review
@@ -29,7 +29,7 @@
 
 ## Verification
 
-- Vitest: 4 files, 20 tests passed.
+- Vitest: 4 files, 21 tests passed.
 - TypeScript and Vite production build: passed.
 - Browser interaction check: all six scenes and primary state transitions passed.
 

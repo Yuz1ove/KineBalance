@@ -75,9 +75,9 @@ function App() {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <a className="brand" href="#main" aria-label="動序 MotionCare 首頁">
+        <a className="brand" href="#main" aria-label="KineBalance 首頁">
           <span>
-            <strong>動序 <em>MotionCare</em></strong>
+            <strong>KineBalance</strong>
             <small>用藥節律 × 動作反應追蹤</small>
           </span>
         </a>
@@ -143,7 +143,7 @@ function App() {
       </div>
 
       <footer className="app-footer">
-        <span>動序 MotionCare · 概念原型</span>
+        <span>KineBalance · 概念原型</span>
         <p>本系統用於長期追蹤與共同複核，不進行診斷、不自動調藥，也不確認患者已實際吞服藥物。</p>
       </footer>
 

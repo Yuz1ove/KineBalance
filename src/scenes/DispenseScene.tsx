@@ -186,7 +186,7 @@ export function DispenseScene({ onNext }: DispenseSceneProps) {
           <div className="machine-toolbar">
             <div>
               <span className={`live-dot ${running ? 'pulsing' : ''}`} />
-              <strong>MotionCare Home · MC-01</strong>
+              <strong>KineBalance Home · KB-01</strong>
             </div>
             <span>2D 動態驗證圖 · GSAP timeline</span>
           </div>
