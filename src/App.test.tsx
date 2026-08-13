@@ -50,4 +50,23 @@ describe('KineBalance prototype', () => {
     expect(screen.getByText('回診摘要已建立')).toBeInTheDocument()
     expect(screen.getByText('已通知主要照顧者，建議與醫療團隊共同複核')).toBeInTheDocument()
   })
+
+  it('preserves the current scene and completed review progress across orientation events', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: '前往場景：團隊複核' }))
+    await user.click(screen.getByRole('button', { name: '新增下一次模擬資料' }))
+    await user.click(screen.getByRole('button', { name: '新增下一次模擬資料' }))
+    expect(screen.getByText('回診摘要已建立')).toBeInTheDocument()
+
+    window.dispatchEvent(new CustomEvent('kinebalance:orientation-gate-change', {
+      detail: { active: true }
+    }))
+    window.dispatchEvent(new CustomEvent('kinebalance:orientation-gate-change', {
+      detail: { active: false }
+    }))
+
+    expect(screen.getByRole('heading', { name: '先看趨勢，再由人共同複核' })).toBeInTheDocument()
+    expect(screen.getByText('回診摘要已建立')).toBeInTheDocument()
+  })
 })

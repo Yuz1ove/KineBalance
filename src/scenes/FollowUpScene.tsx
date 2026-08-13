@@ -21,14 +21,26 @@ export function FollowUpScene({ onNext }: FollowUpSceneProps) {
   const [reminder, setReminder] = useState<'gentle' | 'caregiver' | 'done'>('gentle')
   const [previewMinutes, setPreviewMinutes] = useState(60)
   const [running, setRunning] = useState(false)
+  const [orientationPaused, setOrientationPaused] = useState(
+    () => document.documentElement.dataset.orientationGateActive === 'true'
+  )
 
   useEffect(() => {
-    if (!running || previewMinutes === 0) return
+    const handleOrientationGateChange = (event: Event) => {
+      const active = (event as CustomEvent<{ active?: boolean }>).detail?.active
+      if (typeof active === 'boolean') setOrientationPaused(active)
+    }
+    window.addEventListener('kinebalance:orientation-gate-change', handleOrientationGateChange)
+    return () => window.removeEventListener('kinebalance:orientation-gate-change', handleOrientationGateChange)
+  }, [])
+
+  useEffect(() => {
+    if (!running || previewMinutes === 0 || orientationPaused) return
     const timer = window.setInterval(() => {
       setPreviewMinutes((value) => Math.max(0, value - 5))
     }, 120)
     return () => window.clearInterval(timer)
-  }, [previewMinutes, running])
+  }, [orientationPaused, previewMinutes, running])
 
   useEffect(() => {
     if (previewMinutes === 0) {

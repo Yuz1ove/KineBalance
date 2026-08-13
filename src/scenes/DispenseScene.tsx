@@ -75,11 +75,60 @@ const phaseDelays: Partial<Record<DispensePhase, number>> = {
   'retry-route': 1750
 }
 
+function usePausableTimeout(
+  callback: () => void,
+  delay: number | null,
+  paused: boolean,
+  resetKey: string
+) {
+  const callbackRef = useRef(callback)
+  const timerStateRef = useRef({
+    key: resetKey,
+    remaining: delay,
+    completed: false
+  })
+  callbackRef.current = callback
+
+  useEffect(() => {
+    if (timerStateRef.current.key !== resetKey) {
+      timerStateRef.current = {
+        key: resetKey,
+        remaining: delay,
+        completed: false
+      }
+    }
+
+    const timerState = timerStateRef.current
+    if (delay === null || paused || timerState.completed) return
+    if (timerState.remaining === null) timerState.remaining = delay
+
+    const startedAt = performance.now()
+    const timer = window.setTimeout(() => {
+      timerState.completed = true
+      timerState.remaining = 0
+      callbackRef.current()
+    }, timerState.remaining)
+
+    return () => {
+      window.clearTimeout(timer)
+      if (!timerState.completed && timerState.remaining !== null) {
+        timerState.remaining = Math.max(
+          0,
+          timerState.remaining - (performance.now() - startedAt)
+        )
+      }
+    }
+  }, [delay, paused, resetKey])
+}
+
 export function DispenseScene({ onNext }: DispenseSceneProps) {
   const [scenario, setScenario] = useState<Scenario>('normal')
   const [phase, setPhase] = useState<DispensePhase>('idle')
   const [inspectionStep, setInspectionStep] = useState(0)
   const [caregiverConfirmed, setCaregiverConfirmed] = useState(false)
+  const [orientationPaused, setOrientationPaused] = useState(
+    () => document.documentElement.dataset.orientationGateActive === 'true'
+  )
 
   const reset = (nextScenario = scenario) => {
     setScenario(nextScenario)
@@ -89,36 +138,54 @@ export function DispenseScene({ onNext }: DispenseSceneProps) {
   }
 
   useEffect(() => {
-    if (!phaseDelays[phase]) return
-    const nextPhase: Partial<Record<DispensePhase, DispensePhase>> = {
-      release: 'inspect',
-      inspect: 'route',
-      route: scenario === 'anomaly' ? 'awaiting-caregiver' : 'complete',
-      'retry-release': 'retry-inspect',
-      'retry-inspect': 'retry-route',
-      'retry-route': 'complete'
+    const handleOrientationGateChange = (event: Event) => {
+      const active = (event as CustomEvent<{ active?: boolean }>).detail?.active
+      if (typeof active === 'boolean') setOrientationPaused(active)
     }
-    const timer = window.setTimeout(
-      () => setPhase(nextPhase[phase] ?? 'complete'),
-      phaseDelays[phase]
-    )
-    return () => window.clearTimeout(timer)
-  }, [phase, scenario])
+    window.addEventListener('kinebalance:orientation-gate-change', handleOrientationGateChange)
+    return () => window.removeEventListener('kinebalance:orientation-gate-change', handleOrientationGateChange)
+  }, [])
+
+  const nextPhase: Partial<Record<DispensePhase, DispensePhase>> = {
+    release: 'inspect',
+    inspect: 'route',
+    route: scenario === 'anomaly' ? 'awaiting-caregiver' : 'complete',
+    'retry-release': 'retry-inspect',
+    'retry-inspect': 'retry-route',
+    'retry-route': 'complete'
+  }
+  usePausableTimeout(
+    () => setPhase(nextPhase[phase] ?? 'complete'),
+    phaseDelays[phase] ?? null,
+    orientationPaused,
+    `${scenario}:${phase}`
+  )
 
   const inspecting = phase === 'inspect' || phase === 'retry-inspect'
 
   useEffect(() => {
     if (!inspecting) {
       setInspectionStep(0)
-      return
     }
-    const timers = [
-      window.setTimeout(() => setInspectionStep(1), 900),
-      window.setTimeout(() => setInspectionStep(2), 1320),
-      window.setTimeout(() => setInspectionStep(3), 1740)
-    ]
-    return () => timers.forEach(window.clearTimeout)
   }, [inspecting])
+  usePausableTimeout(
+    () => setInspectionStep((value) => Math.max(value, 1)),
+    inspecting ? 900 : null,
+    orientationPaused,
+    `inspection-1:${phase}`
+  )
+  usePausableTimeout(
+    () => setInspectionStep((value) => Math.max(value, 2)),
+    inspecting ? 1320 : null,
+    orientationPaused,
+    `inspection-2:${phase}`
+  )
+  usePausableTimeout(
+    () => setInspectionStep((value) => Math.max(value, 3)),
+    inspecting ? 1740 : null,
+    orientationPaused,
+    `inspection-3:${phase}`
+  )
 
   const initialPills = scenario === 'normal' ? NORMAL_PILLS : ANOMALY_PILLS
   const retrying =
@@ -403,6 +470,10 @@ function DispenserDiagram({
     const root = svgRef.current
     if (!root) return
 
+    const orientationGateActive =
+      document.documentElement.dataset.orientationGateActive === 'true'
+    let activeAnimations: gsap.core.Animation[] = []
+
     const context = gsap.context(() => {
       const pills = Array.from(root.querySelectorAll<SVGGElement>('.pill-token'))
       const reducedMotion =
@@ -602,7 +673,24 @@ function DispenserDiagram({
       }
     }, root)
 
-    return () => context.revert()
+    activeAnimations = (context.data as gsap.core.Animation[]).filter(
+      (item) => typeof item?.paused === 'function'
+    )
+
+    const setPaused = (paused: boolean) => {
+      activeAnimations.forEach((animation) => animation.paused(paused))
+    }
+    const handleOrientationGateChange = (event: Event) => {
+      const active = (event as CustomEvent<{ active?: boolean }>).detail?.active
+      if (typeof active === 'boolean') setPaused(active)
+    }
+    setPaused(orientationGateActive)
+    window.addEventListener('kinebalance:orientation-gate-change', handleOrientationGateChange)
+
+    return () => {
+      window.removeEventListener('kinebalance:orientation-gate-change', handleOrientationGateChange)
+      context.revert()
+    }
   }, [caregiverConfirmed, phase, scenario])
 
   return (

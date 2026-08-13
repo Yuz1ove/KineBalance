@@ -4509,3 +4509,420 @@ a:focus-visible {
     padding: 14px 18px;
   }
 }
+
+/* Mobile landscape foundation
+   Device capability detection owns the root attributes; these rules never
+   activate for a desktop window that is merely narrow. */
+:root {
+  --kb-visual-viewport-height: 100vh;
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --kb-visual-viewport-height: 100dvh;
+  }
+}
+
+.app-shell,
+.app-content {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.landscape-quick-action {
+  display: none;
+}
+
+html[data-orientation-gate-active="true"] [data-orientation-gate-background] *,
+html[data-orientation-gate-active="true"] [data-orientation-gate-background] *::before,
+html[data-orientation-gate-active="true"] [data-orientation-gate-background] *::after {
+  animation-play-state: paused !important;
+}
+
+html[data-mobile-landscape="true"] {
+  scroll-padding-bottom: max(20px, env(safe-area-inset-bottom));
+}
+
+html[data-mobile-landscape="true"] body,
+html[data-mobile-landscape="true"] .app-shell,
+html[data-mobile-landscape="true"] .app-content,
+html[data-mobile-landscape="true"] .workspace,
+html[data-mobile-landscape="true"] .main-content,
+html[data-mobile-landscape="true"] .scene,
+html[data-mobile-landscape="true"] .scene-transition,
+html[data-mobile-landscape="true"] .tap-layout,
+html[data-mobile-landscape="true"] .dispenser-layout,
+html[data-mobile-landscape="true"] .trend-layout {
+  min-width: 0;
+  max-width: 100%;
+}
+
+html[data-mobile-landscape="true"] .app-header {
+  min-height: 56px;
+  height: 56px;
+  padding: 0 max(8px, env(safe-area-inset-right)) 0 max(14px, env(safe-area-inset-left));
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  color: #fff;
+  background: var(--navy-900);
+}
+
+html[data-mobile-landscape="true"] .brand {
+  width: auto;
+  height: 56px;
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+}
+
+html[data-mobile-landscape="true"] .brand strong {
+  font-size: clamp(16px, 2.6vw, 19px);
+}
+
+html[data-mobile-landscape="true"] .brand small,
+html[data-mobile-landscape="true"] .header-date,
+html[data-mobile-landscape="true"] .caregiver-status {
+  display: none;
+}
+
+html[data-mobile-landscape="true"] .header-actions {
+  height: 56px;
+  padding: 0;
+  background: transparent;
+}
+
+html[data-mobile-landscape="true"] .research-button,
+html[data-mobile-landscape="true"] .mobile-menu-button {
+  width: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  display: inline-flex;
+  color: #fff;
+  font-size: 0;
+}
+
+html[data-mobile-landscape="true"] .safety-banner {
+  min-height: 0;
+  margin-left: 0;
+  padding: 6px max(14px, env(safe-area-inset-right)) 6px max(14px, env(safe-area-inset-left));
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+html[data-mobile-landscape="true"] .safety-banner::before,
+html[data-mobile-landscape="true"] .safety-banner > span {
+  display: none;
+}
+
+html[data-mobile-landscape="true"] .safety-banner p {
+  font-size: clamp(10px, 1.65vw, 12px);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+html[data-mobile-landscape="true"] .workspace {
+  min-height: calc(var(--kb-visual-viewport-height) - 56px);
+  display: block;
+}
+
+html[data-mobile-landscape="true"] .sidebar {
+  position: fixed;
+  inset: 56px auto 0 0;
+  z-index: 45;
+  width: min(78vw, 300px);
+  min-height: 0;
+  padding:
+    16px
+    max(16px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  color: #dce6ec;
+  background: var(--navy-900);
+  box-shadow: 24px 0 52px rgba(16, 35, 54, 0.24);
+  transform: translateX(-105%);
+  transition: transform 220ms ease-out;
+}
+
+html[data-mobile-landscape="true"] .nav-open .sidebar {
+  transform: none;
+}
+
+html[data-mobile-landscape="true"] .sidebar-footnote {
+  display: none;
+}
+
+html[data-mobile-landscape="true"] .scene-nav button {
+  min-height: 48px;
+}
+
+html[data-mobile-landscape="true"] .main-content {
+  min-height: calc(var(--kb-visual-viewport-height) - 56px);
+  padding:
+    clamp(12px, 3dvh, 24px)
+    max(14px, env(safe-area-inset-right))
+    max(28px, calc(16px + env(safe-area-inset-bottom)))
+    max(14px, env(safe-area-inset-left));
+  overflow: visible;
+}
+
+html[data-mobile-landscape="true"] .scene-heading {
+  margin-bottom: clamp(12px, 3dvh, 22px);
+  gap: 16px;
+}
+
+html[data-mobile-landscape="true"] .scene-heading h1 {
+  margin: 3px 0 5px;
+  font-size: clamp(23px, 4.2vw, 32px);
+  line-height: 1.18;
+}
+
+html[data-mobile-landscape="true"] .scene-description {
+  max-width: 70rem;
+  font-size: clamp(12px, 1.8vw, 14px);
+  line-height: 1.55;
+}
+
+html[data-mobile-landscape="true"] .scene-aside {
+  max-width: 46%;
+  padding-bottom: 0;
+  margin: 0;
+  overflow: visible;
+}
+
+html[data-mobile-landscape="true"] .landscape-quick-action {
+  margin: 0 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+html[data-mobile-landscape="true"] .landscape-quick-action .primary-button {
+  min-height: 44px;
+}
+
+html[data-mobile-landscape="true"] .landscape-quick-action small {
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+html[data-mobile-landscape="true"] .care-schedule,
+html[data-mobile-landscape="true"] .machine-card {
+  overflow: visible;
+}
+
+html[data-mobile-landscape="true"] .care-schedule-head,
+html[data-mobile-landscape="true"] .care-schedule-rows li {
+  grid-template-columns: 70px 98px minmax(92px, .7fr) minmax(140px, 1fr) minmax(130px, .9fr);
+  gap: 8px;
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+html[data-mobile-landscape="true"] .task-detail {
+  grid-template-columns: 1fr;
+  gap: 12px;
+  padding: 18px;
+}
+
+html[data-mobile-landscape="true"] .task-action {
+  display: none;
+}
+
+html[data-mobile-landscape="true"] .operational-status {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+html[data-mobile-landscape="true"] .operational-status > div {
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+html[data-mobile-landscape="true"] .operational-status strong,
+html[data-mobile-landscape="true"] .machine-toolbar,
+html[data-mobile-landscape="true"] .diagram-legend,
+html[data-mobile-landscape="true"] .verification-panel > header,
+html[data-mobile-landscape="true"] .trend-chart-card > header,
+html[data-mobile-landscape="true"] .test-actions {
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+}
+
+html[data-mobile-landscape="true"] .tap-layout,
+html[data-mobile-landscape="true"] .trend-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+html[data-mobile-landscape="true"] .tap-stage,
+html[data-mobile-landscape="true"] .metrics-panel,
+html[data-mobile-landscape="true"] .verification-panel,
+html[data-mobile-landscape="true"] .trend-chart-card,
+html[data-mobile-landscape="true"] .trend-insight {
+  min-width: 0;
+  padding: clamp(14px, 2.5vw, 22px);
+}
+
+html[data-mobile-landscape="true"] .tap-stage {
+  display: flex;
+  flex-direction: column;
+}
+
+html[data-mobile-landscape="true"] .test-actions {
+  padding-top: 0;
+  margin-bottom: 12px;
+}
+
+html[data-mobile-landscape="true"] .tap-controls {
+  min-height: clamp(140px, 42dvh, 250px);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(10px, 2vw, 16px);
+}
+
+html[data-mobile-landscape="true"] .tap-pad {
+  width: 100%;
+  min-width: 0;
+  min-height: clamp(140px, 40dvh, 235px);
+}
+
+html[data-mobile-landscape="true"] .machine-card,
+html[data-mobile-landscape="true"] .verification-panel {
+  min-height: 0;
+}
+
+html[data-mobile-landscape="true"] .dispenser-svg {
+  max-height: min(58dvh, 420px);
+}
+
+html[data-mobile-landscape="true"] .trend-state-tabs {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+html[data-mobile-landscape="true"] .trend-state-tabs button {
+  flex: 0 0 auto;
+}
+
+html[data-mobile-landscape="true"] .trend-chart-card {
+  overflow-x: auto;
+}
+
+html[data-mobile-landscape="true"] .trend-svg,
+html[data-mobile-landscape="true"] .trend-chart-card > footer {
+  width: 100%;
+  min-width: 620px;
+}
+
+html[data-mobile-landscape="true"] .bottom-navigation {
+  margin-top: 18px;
+  padding-bottom: env(safe-area-inset-bottom);
+  flex-wrap: wrap;
+}
+
+html[data-mobile-landscape="true"] .app-footer {
+  padding:
+    12px
+    max(14px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom))
+    max(14px, env(safe-area-inset-left));
+}
+
+@media (orientation: landscape) and (min-width: 640px) {
+  html[data-mobile-landscape="true"] .dispenser-layout {
+    grid-template-columns: minmax(0, 1.15fr) minmax(230px, .85fr);
+    gap: 12px;
+  }
+}
+
+@media (orientation: landscape) and (max-width: 760px) {
+  html[data-mobile-landscape="true"] .care-schedule-head {
+    display: none;
+  }
+
+  html[data-mobile-landscape="true"] .care-schedule-rows {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  html[data-mobile-landscape="true"] .care-schedule-rows li {
+    min-width: 0;
+    min-height: 78px;
+    grid-template-columns: 58px minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    padding: 10px;
+  }
+
+  html[data-mobile-landscape="true"] .care-schedule-rows time {
+    grid-row: 1 / 3;
+  }
+
+  html[data-mobile-landscape="true"] .care-schedule-rows .status-pill {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  html[data-mobile-landscape="true"] .care-schedule-rows strong {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  html[data-mobile-landscape="true"] .care-schedule-rows > li > span:not(.status-pill) {
+    grid-column: 2 / 4;
+    grid-row: 2;
+  }
+
+  html[data-mobile-landscape="true"] .care-schedule-rows small {
+    display: none;
+  }
+
+  html[data-mobile-landscape="true"] .operational-status {
+    grid-template-columns: 1fr;
+  }
+
+  html[data-mobile-landscape="true"] .operational-status > div + div {
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 460px) {
+  html[data-mobile-landscape="true"] .main-content {
+    padding-top: 10px;
+  }
+
+  html[data-mobile-landscape="true"] .scene-heading {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    margin-bottom: 10px;
+  }
+
+  html[data-mobile-landscape="true"] .scene-aside {
+    width: auto;
+    max-width: none;
+  }
+
+  html[data-mobile-landscape="true"] .mode-switch,
+  html[data-mobile-landscape="true"] .scenario-switch {
+    width: auto;
+  }
+
+  html[data-mobile-landscape="true"] .scene-heading h1 {
+    font-size: clamp(22px, 4vw, 28px);
+  }
+
+  html[data-mobile-landscape="true"] .tap-controls,
+  html[data-mobile-landscape="true"] .tap-pad {
+    min-height: 132px;
+  }
+
+  html[data-mobile-landscape="true"] .machine-card,
+  html[data-mobile-landscape="true"] .verification-panel,
+  html[data-mobile-landscape="true"] .trend-chart-card,
+  html[data-mobile-landscape="true"] .trend-insight {
+    min-height: 0;
+  }
+}

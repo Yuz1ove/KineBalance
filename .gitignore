@@ -11,3 +11,6 @@ vite.config.d.ts
 !.env.example
 
 .DS_Store
+
+output/playwright/
+.playwright-cli/

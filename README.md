@@ -6,7 +6,7 @@ KineBalance 是帕金森氏症居家用藥節律與動作反應追蹤原型。�
 
 ## 啟動
 
-需求：Node.js 18 以上。
+需求：Node.js 20 以上（含 Playwright 真實瀏覽器驗收）。
 
 ```bash
 npm install
@@ -24,6 +24,15 @@ npm run build
 npm run preview
 ```
 
+第一次執行真實瀏覽器驗收前，安裝 Chromium 與 WebKit runtime：
+
+```bash
+npm run test:e2e:install
+npm run test:e2e
+```
+
+Playwright 會驗證 Android/Chromium、iPhone/WebKit、窄桌面視窗、Reduced Motion、方向切換、焦點與主要橫向版面。WebKit 模擬無法完整重現 iOS Safari 動態網址列與實體安全區，正式上線前仍需以實體 iPhone Safari 驗收一次。
+
 ## 已完成
 
 - 六個可連續操作的場景與桌面／手機響應式介面。
@@ -36,6 +45,7 @@ npm run preview
 - Physical AI 感知—決策—行動與不可由 AI 跨越的處方安全邊界。
 - 研究依據、限制、模擬資料與非診斷定位。
 - 支援 `prefers-reduced-motion`。
+- 手機直向方向提示、無障礙焦點管理，以及不遺失場景狀態的橫向操作版面。
 
 ## 尚未完成
 

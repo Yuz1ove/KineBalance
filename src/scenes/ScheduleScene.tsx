@@ -41,6 +41,12 @@ export function ScheduleScene({ onNext }: ScheduleSceneProps) {
       description="處方與發藥時間來自醫師核准內容及安全規則。KineBalance 只協助記錄、提醒與複核。"
       aside={<StatusPill tone="teal" icon="safe">家屬連線正常</StatusPill>}
     >
+      <div className="landscape-quick-action">
+        <button className="primary-button" onClick={onNext}>
+          開始服藥前指尖測試 <ArrowRight aria-hidden="true" />
+        </button>
+        <small>約 2–3 分鐘完成 · 不影響用藥</small>
+      </div>
       <section className="care-schedule" aria-labelledby="care-schedule-title">
         <h2 id="care-schedule-title" className="sr-only">今日用藥時程</h2>
         <div className="care-schedule-head" aria-hidden="true">
