@@ -31,9 +31,10 @@ interface OrientationGateChangeDetail {
 
 interface TapTestSceneProps {
   onNext: () => void
+  active?: boolean
 }
 
-export function TapTestScene({ onNext }: TapTestSceneProps) {
+export function TapTestScene({ onNext, active = true }: TapTestSceneProps) {
   const initialOrientationPaused =
     document.documentElement.dataset.orientationGateActive === 'true'
   const [mode, setMode] = useState<Mode>('demo')
@@ -53,12 +54,15 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
   const demoIndex = useRef(0)
   const completionRecorded = useRef(false)
   const testStateRef = useRef<TestState>('ready')
+  const activeRef = useRef(active)
+  const expectedSideRef = useRef<Side>('left')
   const orientationPausedRef = useRef(initialOrientationPaused)
   const pausedAt = useRef<number | null>(null)
   const accumulatedPausedMs = useRef(0)
   const flashTimeout = useRef<number | null>(null)
 
   const duration = mode === 'demo' ? 6000 : 20000
+  const runtimePaused = !active || orientationPaused
 
   const intervals = useMemo(
     () => tapTimes.slice(1).map((time, index) => time - tapTimes[index]),
@@ -69,7 +73,8 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
   const metrics = calculateTapMetrics(intervals, elapsed, invalidTaps, {
     expectedDurationMs: duration,
     interrupted,
-    personalRateRange: [0.8, 4]
+    personalRateRange: [0.8, 4],
+    tapCount: tapTimes.length
   })
   const alternationFailed = metrics.validity.reasons.includes('左右交替錯誤過多')
   const assistance = evaluateTestAssistance({
@@ -78,6 +83,7 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
   })
 
   testStateRef.current = testState
+  activeRef.current = active
 
   const getActiveElapsed = useCallback((now = performance.now()) => {
     const currentPauseMs = pausedAt.current === null ? 0 : now - pausedAt.current
@@ -85,6 +91,21 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
       0,
       now - startTime.current - accumulatedPausedMs.current - currentPauseMs
     )
+  }, [])
+
+  const syncRuntimePause = useCallback((now = performance.now()) => {
+    if (testStateRef.current !== 'running') {
+      pausedAt.current = null
+      return
+    }
+
+    const shouldPause = !activeRef.current || orientationPausedRef.current
+    if (shouldPause && pausedAt.current === null) {
+      pausedAt.current = now
+    } else if (!shouldPause && pausedAt.current !== null) {
+      accumulatedPausedMs.current += now - pausedAt.current
+      pausedAt.current = null
+    }
   }, [])
 
   const showTapFlash = useCallback((side: Side) => {
@@ -102,6 +123,7 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
     setCountdown(3)
     setRemainingMs(nextMode === 'demo' ? 6000 : 20000)
     setTapTimes([])
+    expectedSideRef.current = 'left'
     setExpectedSide('left')
     setInvalidTaps(0)
     setInterrupted(false)
@@ -121,15 +143,21 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
   }, [mode])
 
   const registerTap = useCallback((side: Side) => {
-    if (testState !== 'running' || orientationPausedRef.current) return
-    if (side !== expectedSide) {
+    if (
+      testStateRef.current !== 'running' ||
+      !activeRef.current ||
+      orientationPausedRef.current
+    ) return
+    if (side !== expectedSideRef.current) {
       setInvalidTaps((value) => value + 1)
       return
     }
+    const nextExpectedSide = side === 'left' ? 'right' : 'left'
+    expectedSideRef.current = nextExpectedSide
     setTapTimes((times) => [...times, getActiveElapsed()])
-    setExpectedSide(side === 'left' ? 'right' : 'left')
+    setExpectedSide(nextExpectedSide)
     showTapFlash(side)
-  }, [expectedSide, getActiveElapsed, showTapFlash, testState])
+  }, [getActiveElapsed, showTapFlash])
 
   useEffect(() => {
     const handleOrientationGateChange = (event: Event) => {
@@ -140,17 +168,7 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
 
       const now = performance.now()
       orientationPausedRef.current = detail.active
-
-      if (testStateRef.current === 'running') {
-        if (detail.active) {
-          pausedAt.current = now
-        } else if (pausedAt.current !== null) {
-          accumulatedPausedMs.current += now - pausedAt.current
-          pausedAt.current = null
-        }
-      } else {
-        pausedAt.current = null
-      }
+      syncRuntimePause(now)
 
       if (detail.active) {
         if (flashTimeout.current !== null) {
@@ -167,17 +185,28 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
     return () => {
       window.removeEventListener(ORIENTATION_GATE_CHANGE_EVENT, handleOrientationGateChange)
     }
-  }, [])
+  }, [syncRuntimePause])
+
+  useEffect(() => {
+    syncRuntimePause()
+    if (!active) {
+      if (flashTimeout.current !== null) {
+        window.clearTimeout(flashTimeout.current)
+        flashTimeout.current = null
+      }
+      setFlashSide(null)
+    }
+  }, [active, syncRuntimePause])
 
   useEffect(() => () => {
     if (flashTimeout.current !== null) window.clearTimeout(flashTimeout.current)
   }, [])
 
   useEffect(() => {
-    if (testState !== 'countdown' || orientationPaused) return
+    if (testState !== 'countdown' || runtimePaused) return
     const timer = window.setInterval(() => {
       setCountdown((value) => {
-        if (orientationPausedRef.current) return value
+        if (!activeRef.current || orientationPausedRef.current) return value
         if (value <= 1) {
           window.clearInterval(timer)
           startTime.current = performance.now()
@@ -191,12 +220,12 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
       })
     }, 650)
     return () => window.clearInterval(timer)
-  }, [orientationPaused, testState])
+  }, [runtimePaused, testState])
 
   useEffect(() => {
-    if (testState !== 'running' || orientationPaused) return
+    if (testState !== 'running' || runtimePaused) return
     const ticker = window.setInterval(() => {
-      if (orientationPausedRef.current) return
+      if (!activeRef.current || orientationPausedRef.current) return
       const elapsedNow = getActiveElapsed()
       const nextRemaining = Math.max(0, duration - elapsedNow)
       setRemainingMs(nextRemaining)
@@ -208,7 +237,7 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
       }
     }, 50)
     return () => window.clearInterval(ticker)
-  }, [duration, getActiveElapsed, orientationPaused, testState])
+  }, [duration, getActiveElapsed, runtimePaused, testState])
 
   useEffect(() => {
     if (testState !== 'complete' || completionRecorded.current) return
@@ -217,7 +246,7 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
   }, [alternationFailed, testState])
 
   useEffect(() => {
-    if (testState !== 'running' || mode !== 'demo' || orientationPaused) return
+    if (testState !== 'running' || mode !== 'demo' || runtimePaused) return
     const timers: number[] = []
     const schedule: Array<{ elapsedMs: number; side: Side }> = [
       { elapsedMs: 180, side: 'left' }
@@ -236,27 +265,34 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
       const index = demoIndex.current + offset
       const delay = Math.max(0, elapsedMs - elapsedAtSchedule)
       timers.push(window.setTimeout(() => {
-        if (orientationPausedRef.current || testStateRef.current !== 'running') return
+        if (
+          !activeRef.current ||
+          orientationPausedRef.current ||
+          testStateRef.current !== 'running'
+        ) return
         demoIndex.current = Math.max(demoIndex.current, index + 1)
+        const nextExpectedSide = side === 'left' ? 'right' : 'left'
+        expectedSideRef.current = nextExpectedSide
         setTapTimes((times) => [...times, elapsedMs])
-        setExpectedSide(side === 'left' ? 'right' : 'left')
+        setExpectedSide(nextExpectedSide)
         showTapFlash(side)
       }, delay))
     })
     return () => timers.forEach(window.clearTimeout)
-  }, [getActiveElapsed, mode, orientationPaused, showTapFlash, testState])
+  }, [getActiveElapsed, mode, runtimePaused, showTapFlash, testState])
 
   useEffect(() => {
+    if (!active) return
     const handleKey = (event: KeyboardEvent) => {
       if (event.key.toLowerCase() === 'f') registerTap('left')
       if (event.key.toLowerCase() === 'j') registerTap('right')
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [registerTap])
+  }, [active, registerTap])
 
   const start = () => {
-    if (orientationPausedRef.current) return
+    if (!activeRef.current || orientationPausedRef.current) return
     completionRecorded.current = false
     setAssistanceRequested(false)
     setCountdown(3)
@@ -265,7 +301,7 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
   }
 
   const interruptTest = () => {
-    if (orientationPausedRef.current) return
+    if (!activeRef.current || orientationPausedRef.current) return
     setInterrupted(true)
     setCompletedElapsedMs(Math.max(0, duration - remainingMs))
     testStateRef.current = 'complete'
@@ -377,7 +413,7 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
             <button
               className={`tap-pad left ${expectedSide === 'left' && testState === 'running' ? 'expected' : ''} ${flashSide === 'left' ? 'pressed' : ''}`}
               onPointerDown={() => registerTap('left')}
-              disabled={testState !== 'running' || mode === 'demo' || orientationPaused}
+              disabled={testState !== 'running' || mode === 'demo' || runtimePaused}
               aria-label="左側點擊區，可按 F 鍵"
             >
               <span>左</span>
@@ -386,7 +422,7 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
             <button
               className={`tap-pad right ${expectedSide === 'right' && testState === 'running' ? 'expected' : ''} ${flashSide === 'right' ? 'pressed' : ''}`}
               onPointerDown={() => registerTap('right')}
-              disabled={testState !== 'running' || mode === 'demo' || orientationPaused}
+              disabled={testState !== 'running' || mode === 'demo' || runtimePaused}
               aria-label="右側點擊區，可按 J 鍵"
             >
               <span>右</span>

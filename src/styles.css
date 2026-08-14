@@ -80,6 +80,205 @@ svg {
   min-height: 100vh;
 }
 
+/* Exhibition ↔ Clinical presentation bridge. Domain state lives in the
+   persistent ClinicalExperience subtree; this layer only changes framing. */
+.experience-root {
+  min-height: 100vh;
+}
+
+.experience-root[data-experience-mode='clinical'] > .exhibition-mode {
+  display: none;
+}
+
+.clinical-experience-frame {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  background: #f3f5f1;
+}
+
+.clinical-page {
+  min-height: 100vh;
+}
+
+.clinical-overlay {
+  position: fixed;
+  z-index: 500;
+  inset: 0;
+  padding: clamp(18px, 3vw, 42px);
+  display: grid;
+  place-items: center;
+}
+
+.clinical-overlay-scrim {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  min-height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: rgba(3, 17, 27, 0.76);
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+}
+
+.clinical-overlay .clinical-experience-frame {
+  width: min(1480px, 100%);
+  max-height: calc(100dvh - clamp(36px, 6vw, 84px));
+  overflow: auto;
+  overscroll-behavior: contain;
+  box-shadow: 0 40px 120px rgba(1, 13, 22, 0.34);
+}
+
+.clinical-overlay-bar {
+  min-height: 64px;
+  padding: 0 16px 0 24px;
+  position: sticky;
+  z-index: 100;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  color: #dce7e5;
+  background: #081f2d;
+  border-bottom: 1px solid rgba(224, 236, 233, 0.14);
+}
+
+.clinical-overlay-bar > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.clinical-overlay-bar span {
+  color: #719d96;
+  font: 600 9px/1 'Inter', sans-serif;
+  letter-spacing: 0.15em;
+}
+
+.clinical-overlay-bar strong {
+  color: #e9f0ef;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.clinical-overlay-bar button {
+  width: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(224, 236, 233, 0.18);
+  border-radius: 0;
+  color: #dce7e5;
+  background: transparent;
+  cursor: pointer;
+}
+
+.clinical-overlay-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.clinical-overlay-actions .clinical-overlay-mode {
+  width: auto;
+  padding: 0 14px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.clinical-experience[hidden] {
+  display: none !important;
+}
+
+.clinical-overlay-bar svg {
+  width: 18px;
+}
+
+.clinical-overlay .app-header {
+  position: relative;
+  top: auto;
+}
+
+.clinical-overlay .workspace {
+  max-width: none;
+}
+
+.brand:is(button) {
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.return-exhibition-button {
+  width: 100%;
+  min-height: 44px;
+  margin: 0 0 18px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid rgba(220, 232, 230, 0.16);
+  border-radius: 10px;
+  color: #a9c0bd;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.return-exhibition-button svg {
+  width: 15px;
+}
+
+.clinical-loading {
+  min-height: 40vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.clinical-loading span {
+  width: 24px;
+  height: 1px;
+  background: var(--teal-600);
+}
+
+@media (max-width: 760px) {
+  .clinical-overlay {
+    padding: 0;
+    place-items: stretch;
+  }
+
+  .clinical-overlay-scrim {
+    display: none;
+  }
+
+  .clinical-overlay .clinical-experience-frame {
+    width: 100%;
+    max-height: 100dvh;
+    box-shadow: none;
+  }
+
+  .clinical-overlay-bar {
+    min-height: 58px;
+    padding: 0 max(10px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clinical-overlay-scrim {
+    backdrop-filter: none;
+  }
+}
+
 .app-header {
   height: 76px;
   padding: 0 28px;
@@ -372,6 +571,10 @@ svg {
 
 .scene-transition {
   animation: scene-enter 420ms cubic-bezier(0.2, 0.78, 0.2, 1) both;
+}
+
+.clinical-scene-slot[hidden] {
+  display: none !important;
 }
 
 @keyframes scene-enter {
@@ -1366,7 +1569,7 @@ svg {
   letter-spacing: 0.02em;
 }
 
-.dispenser-svg .module {
+.dispenser-svg:not(.motion-enhanced) .module {
   transition: transform 450ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
@@ -1412,10 +1615,13 @@ svg {
 
 .vision-boundary {
   opacity: 0;
+}
+
+.dispenser-svg:not(.motion-enhanced) .vision-boundary {
   transition: opacity 220ms ease;
 }
 
-.vision-boundary.active {
+.dispenser-svg:not(.motion-enhanced) .vision-boundary.active {
   opacity: 1;
 }
 
@@ -1472,15 +1678,18 @@ svg {
 .gate-flap {
   transform-box: fill-box;
   transform-origin: center;
+}
+
+.dispenser-svg:not(.motion-enhanced) .gate-flap {
   transition: transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1), stroke 220ms ease;
 }
 
-.gate-flap.normal {
+.dispenser-svg:not(.motion-enhanced) .gate-flap.normal {
   stroke: var(--teal-700);
   transform: rotate(-26deg);
 }
 
-.gate-flap.anomaly {
+.dispenser-svg:not(.motion-enhanced) .gate-flap.anomaly {
   stroke: var(--red-700);
   transform: rotate(27deg);
 }
@@ -1547,14 +1756,14 @@ svg {
   transform: none;
 }
 
-.pill-token.batch-initial.phase-release,
-.pill-token.batch-retry.phase-retry-release {
+.dispenser-svg:not(.motion-enhanced) .pill-token.batch-initial.phase-release,
+.dispenser-svg:not(.motion-enhanced) .pill-token.batch-retry.phase-retry-release {
   animation: pill-source-to-tray 1800ms cubic-bezier(0.2, 0.72, 0.22, 1) forwards;
   animation-delay: var(--pill-delay);
 }
 
-.pill-token.batch-initial.phase-inspect,
-.pill-token.batch-retry.phase-retry-inspect {
+.dispenser-svg:not(.motion-enhanced) .pill-token.batch-initial.phase-inspect,
+.dispenser-svg:not(.motion-enhanced) .pill-token.batch-retry.phase-retry-inspect {
   opacity: 1;
   transform: translate(
     calc(545px + var(--pill-x)),
@@ -1562,18 +1771,18 @@ svg {
   );
 }
 
-.pill-token.batch-initial.destination-pickup.phase-route,
-.pill-token.batch-retry.destination-pickup.phase-retry-route {
+.dispenser-svg:not(.motion-enhanced) .pill-token.batch-initial.destination-pickup.phase-route,
+.dispenser-svg:not(.motion-enhanced) .pill-token.batch-retry.destination-pickup.phase-retry-route {
   animation: pill-tray-to-pickup 1450ms cubic-bezier(0.2, 0.72, 0.22, 1) forwards;
   animation-delay: var(--pill-delay);
 }
 
-.pill-token.batch-initial.destination-quarantine.phase-route {
+.dispenser-svg:not(.motion-enhanced) .pill-token.batch-initial.destination-quarantine.phase-route {
   animation: pill-tray-to-quarantine 1450ms cubic-bezier(0.2, 0.72, 0.22, 1) forwards;
   animation-delay: var(--pill-delay);
 }
 
-.pill-token.destination-pickup.phase-complete {
+.dispenser-svg:not(.motion-enhanced) .pill-token.destination-pickup.phase-complete {
   opacity: 1;
   transform: translate(
     calc(405px + var(--pill-x)),
@@ -1581,11 +1790,11 @@ svg {
   );
 }
 
-.pill-token.batch-initial.destination-quarantine.phase-awaiting-caregiver,
-.pill-token.batch-initial.destination-quarantine.phase-retry-release,
-.pill-token.batch-initial.destination-quarantine.phase-retry-inspect,
-.pill-token.batch-initial.destination-quarantine.phase-retry-route,
-.pill-token.batch-initial.destination-quarantine.phase-complete {
+.dispenser-svg:not(.motion-enhanced) .pill-token.batch-initial.destination-quarantine.phase-awaiting-caregiver,
+.dispenser-svg:not(.motion-enhanced) .pill-token.batch-initial.destination-quarantine.phase-retry-release,
+.dispenser-svg:not(.motion-enhanced) .pill-token.batch-initial.destination-quarantine.phase-retry-inspect,
+.dispenser-svg:not(.motion-enhanced) .pill-token.batch-initial.destination-quarantine.phase-retry-route,
+.dispenser-svg:not(.motion-enhanced) .pill-token.batch-initial.destination-quarantine.phase-complete {
   opacity: 1;
   transform: translate(
     calc(627px + var(--pill-x)),
@@ -2988,7 +3197,7 @@ svg {
 .drawer-layer {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: 700;
   pointer-events: none;
   visibility: hidden;
   transition: visibility 0s linear 350ms;

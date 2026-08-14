@@ -9,6 +9,7 @@ export interface TapMetricOptions {
   interrupted?: boolean
   inputLost?: boolean
   personalRateRange?: readonly [number, number]
+  tapCount?: number
 }
 
 const MIN_COMPLETION_RATIO = 0.9
@@ -39,7 +40,7 @@ export function calculateTapMetrics(
   invalidAlternations = 0,
   options: TapMetricOptions = {}
 ): TapMetrics {
-  const count = intervals.length + (elapsedMs > 0 ? 1 : 0)
+  const count = options.tapCount ?? intervals.length + (elapsedMs > 0 ? 1 : 0)
   const rate = elapsedMs > 0 ? count / (elapsedMs / 1000) : 0
   const attempts = count + invalidAlternations
   const alternationErrorRate = attempts > 0 ? invalidAlternations / attempts : 0

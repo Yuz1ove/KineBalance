@@ -15,9 +15,10 @@ import { StatusPill } from '../components/StatusPill'
 
 interface FollowUpSceneProps {
   onNext: () => void
+  active?: boolean
 }
 
-export function FollowUpScene({ onNext }: FollowUpSceneProps) {
+export function FollowUpScene({ onNext, active = true }: FollowUpSceneProps) {
   const [reminder, setReminder] = useState<'gentle' | 'caregiver' | 'done'>('gentle')
   const [previewMinutes, setPreviewMinutes] = useState(60)
   const [running, setRunning] = useState(false)
@@ -35,12 +36,12 @@ export function FollowUpScene({ onNext }: FollowUpSceneProps) {
   }, [])
 
   useEffect(() => {
-    if (!running || previewMinutes === 0 || orientationPaused) return
+    if (!active || !running || previewMinutes === 0 || orientationPaused) return
     const timer = window.setInterval(() => {
       setPreviewMinutes((value) => Math.max(0, value - 5))
     }, 120)
     return () => window.clearInterval(timer)
-  }, [orientationPaused, previewMinutes, running])
+  }, [active, orientationPaused, previewMinutes, running])
 
   useEffect(() => {
     if (previewMinutes === 0) {
