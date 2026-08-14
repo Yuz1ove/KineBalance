@@ -45,6 +45,50 @@ describe('tap test scene', () => {
     expect(screen.getByText('動作速度偏低')).toBeInTheDocument()
   })
 
+  it('records rapid F then J keydowns as two valid alternating taps', () => {
+    vi.useFakeTimers()
+    render(<TapTestScene onNext={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '標準測試 · 20 秒' }))
+    fireEvent.click(screen.getByRole('button', { name: '開始 20 秒測試' }))
+    act(() => vi.advanceTimersByTime(1950))
+    act(() => vi.advanceTimersByTime(100))
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f' }))
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'j' }))
+    })
+
+    expect(within(screen.getByText('有效點擊').closest('.metric')!).getByText('2')).toBeInTheDocument()
+    expect(within(screen.getByText('交替錯誤').closest('.metric')!).getByText('0.0')).toBeInTheDocument()
+  })
+
+  it('pauses inactive demo runtime and resumes without resetting its result', () => {
+    vi.useFakeTimers()
+    const onNext = vi.fn()
+    const { rerender } = render(<TapTestScene active onNext={onNext} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '播放可重現模擬' }))
+    act(() => vi.advanceTimersByTime(1950))
+    act(() => vi.advanceTimersByTime(200))
+
+    expect(screen.getByText('5.8 秒')).toBeInTheDocument()
+    expect(within(screen.getByText('有效點擊').closest('.metric')!).getByText('1')).toBeInTheDocument()
+
+    rerender(<TapTestScene active={false} onNext={onNext} />)
+    act(() => vi.advanceTimersByTime(5000))
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'j' })))
+
+    expect(screen.getByText('5.8 秒')).toBeInTheDocument()
+    expect(within(screen.getByText('有效點擊').closest('.metric')!).getByText('1')).toBeInTheDocument()
+
+    rerender(<TapTestScene active onNext={onNext} />)
+    act(() => vi.advanceTimersByTime(5800))
+
+    expect(within(screen.getByText('有效點擊').closest('.metric')!).getByText('18')).toBeInTheDocument()
+    expect(within(screen.getByText('交替錯誤').closest('.metric')!).getByText('0.0')).toBeInTheDocument()
+  })
+
   it('notifies a caregiver for assistance after two consecutive alternation failures', () => {
     vi.useFakeTimers()
     render(<TapTestScene onNext={vi.fn()} />)
