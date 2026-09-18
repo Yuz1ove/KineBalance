@@ -99,7 +99,7 @@ export function TrendScene({ onNext }: TrendSceneProps) {
 
   return (
     <SceneShell
-      eyebrow="Scene 05 · Personal response"
+      eyebrow="場景 05 · 個人長期反應"
       title="看自己的長期變化，不和別人比較"
       description="每個資料點都來自同一個人的服藥前後差值；單次低手速只記錄，不通知家屬，也不改變任何用藥。"
       aside={<StatusPill tone="blue">概念展示／模擬資料</StatusPill>}

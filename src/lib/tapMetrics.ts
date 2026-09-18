@@ -9,6 +9,7 @@ export interface TapMetricOptions {
   interrupted?: boolean
   inputLost?: boolean
   personalRateRange?: readonly [number, number]
+  tapCount?: number
 }
 
 const MIN_COMPLETION_RATIO = 0.9
@@ -39,7 +40,7 @@ export function calculateTapMetrics(
   invalidAlternations = 0,
   options: TapMetricOptions = {}
 ): TapMetrics {
-  const count = intervals.length + (elapsedMs > 0 ? 1 : 0)
+  const count = options.tapCount ?? intervals.length + (elapsedMs > 0 ? 1 : 0)
   const rate = elapsedMs > 0 ? count / (elapsedMs / 1000) : 0
   const attempts = count + invalidAlternations
   const alternationErrorRate = attempts > 0 ? invalidAlternations / attempts : 0
@@ -224,7 +225,9 @@ export function evaluateTestAssistance({
   }
 }
 
+// Fixed exhibition cadence. The sequence completes comfortably before the
+// six-second boundary so a late browser timer cannot drop the final tap.
 export const DEMO_INTERVALS = [
-  310, 298, 322, 305, 315, 301, 328, 307, 319, 312, 325, 318, 333, 321, 337, 329,
-  341
+  270, 258, 282, 265, 275, 261, 288, 267, 279, 272, 285, 278, 293, 281, 297, 289,
+  301
 ]

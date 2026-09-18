@@ -57,7 +57,7 @@ export function ReviewScene({ onRestart }: ReviewSceneProps) {
 
   return (
     <SceneShell
-      eyebrow="Scene 06 · Shared review"
+      eyebrow="場景 06 · 照護團隊複核"
       title="先看趨勢，再由人共同複核"
       description="單次偏離只記錄；最近 3 次中 2 次偏離發送非緊急提醒，連續 3 次偏離則通知主要照顧者並建立回診摘要。"
       aside={<StatusPill tone="amber" icon="review">原型規則 · 尚待臨床校準</StatusPill>}
@@ -66,7 +66,7 @@ export function ReviewScene({ onRestart }: ReviewSceneProps) {
         <section className="rule-simulator">
           <header>
             <div>
-              <p className="eyebrow">Prototype rule simulator</p>
+              <p className="eyebrow">原型規則模擬器</p>
               <h2>安全分級與通知條件</h2>
             </div>
             <button className="icon-button" onClick={reset} aria-label="重設示範">

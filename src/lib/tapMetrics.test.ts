@@ -19,6 +19,16 @@ describe('tap metrics', () => {
     expect(resultA.quality).toBe('測試有效')
   })
 
+  it('does not invent a valid tap while a running test has no input', () => {
+    const result = calculateTapMetrics([], 500, 0, {
+      expectedDurationMs: 20000,
+      tapCount: 0
+    })
+
+    expect(result.count).toBe(0)
+    expect(result.rate).toBe(0)
+  })
+
   it('keeps a complete 20 second test with 8 correct alternating taps valid', () => {
     const result = calculateTapMetrics(
       [2800, 2600, 2500, 2700, 2400, 2600, 2500],

@@ -1,10 +1,10 @@
-import { BrainCircuit, Camera, Hand, PackageCheck, Scale, Timer, Users } from 'lucide-react'
+import { BrainCircuit, Camera, Hand, LockKeyhole, PackageCheck, Scale, Timer, Users } from 'lucide-react'
 
 export function SafetyLoop() {
   return (
     <section className="safety-loop" aria-labelledby="loop-title">
       <header>
-        <p className="eyebrow">Physical AI safety loop</p>
+        <p className="eyebrow">實體 AI 安全迴路</p>
         <h2 id="loop-title">感知—決策—行動，處方規則在環外受保護</h2>
       </header>
       <div className="loop-grid">
@@ -33,7 +33,7 @@ export function SafetyLoop() {
         </div>
       </div>
       <footer>
-        <ShieldLock />
+        <LockKeyhole aria-hidden="true" />
         <p>
           <strong>不可由 AI 變更的安全邊界</strong>
           AI 不能停止用藥，也不能更改藥物、劑量或服藥時間。只有分藥硬體偵測到重量、影像、
@@ -41,15 +41,5 @@ export function SafetyLoop() {
         </p>
       </footer>
     </section>
-  )
-}
-
-function ShieldLock() {
-  return (
-    <svg viewBox="0 0 48 48" aria-hidden="true">
-      <path d="M24 4 40 10v12c0 10.4-6.8 18.4-16 22C14.8 40.4 8 32.4 8 22V10l16-6Z" />
-      <rect x="17" y="20" width="14" height="11" rx="3" />
-      <path d="M20 20v-3a4 4 0 0 1 8 0v3" />
-    </svg>
   )
 }

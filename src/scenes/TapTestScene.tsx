@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowRight,
@@ -13,6 +14,9 @@ import {
 } from 'lucide-react'
 import { SceneShell } from '../components/SceneShell'
 import { StatusPill } from '../components/StatusPill'
+import { AnalysisPanel } from '../kbpd/AnalysisPanel'
+import { developerSubjectId } from '../kbpd/client'
+import type { InputModality, MotionEvent, MotionInput } from '../kbpd/contracts'
 import {
   calculateTapMetrics,
   DEMO_INTERVALS,
@@ -23,15 +27,25 @@ type Mode = 'standard' | 'demo'
 type TestState = 'ready' | 'countdown' | 'running' | 'complete'
 type Side = 'left' | 'right'
 
-interface TapTestSceneProps {
-  onNext: () => void
+const ORIENTATION_GATE_CHANGE_EVENT = 'kinebalance:orientation-gate-change'
+
+interface OrientationGateChangeDetail {
+  active: boolean
 }
 
-export function TapTestScene({ onNext }: TapTestSceneProps) {
-  const [mode, setMode] = useState<Mode>('demo')
+interface TapTestSceneProps {
+  onNext: () => void
+  active?: boolean
+  workspace?: { subjectId: string; dataset: 'DEMO' | 'CAPTURE'; renderResult: (session: MotionInput | null) => ReactNode; onActivity: (active: boolean) => void }
+}
+
+export function TapTestScene({ onNext, active = true, workspace }: TapTestSceneProps) {
+  const initialOrientationPaused =
+    document.documentElement.dataset.orientationGateActive === 'true'
+  const [mode, setMode] = useState<Mode>(workspace?.dataset === 'CAPTURE' ? 'standard' : 'demo')
   const [testState, setTestState] = useState<TestState>('ready')
   const [countdown, setCountdown] = useState(3)
-  const [remainingMs, setRemainingMs] = useState(6000)
+  const [remainingMs, setRemainingMs] = useState(workspace?.dataset === 'CAPTURE' ? 20000 : 6000)
   const [tapTimes, setTapTimes] = useState<number[]>([])
   const [expectedSide, setExpectedSide] = useState<Side>('left')
   const [invalidTaps, setInvalidTaps] = useState(0)
@@ -40,12 +54,27 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
   const [flashSide, setFlashSide] = useState<Side | null>(null)
   const [consecutiveAlternationFailures, setConsecutiveAlternationFailures] = useState(0)
   const [assistanceRequested, setAssistanceRequested] = useState(false)
+  const [orientationPaused, setOrientationPaused] = useState(initialOrientationPaused)
   const startTime = useRef(0)
   const demoIndex = useRef(0)
-  const demoElapsed = useRef(0)
   const completionRecorded = useRef(false)
+  const testStateRef = useRef<TestState>('ready')
+  const activeRef = useRef(active)
+  const expectedSideRef = useRef<Side>('left')
+  const orientationPausedRef = useRef(initialOrientationPaused)
+  const pausedAt = useRef<number | null>(null)
+  const accumulatedPausedMs = useRef(0)
+  const flashTimeout = useRef<number | null>(null)
+  const [captureId, setCaptureId] = useState(() => crypto.randomUUID())
+  const rawEvents = useRef<MotionEvent[]>([])
+  const captureStartedAt = useRef('')
+  const captureEndedAt = useRef('')
+  const captureSubject = useRef('')
+  const captureDevice = useRef('browser-input-v1')
 
   const duration = mode === 'demo' ? 6000 : 20000
+  useEffect(() => { workspace?.onActivity(testState === 'running' || testState === 'countdown'); return () => workspace?.onActivity(false) }, [testState, workspace?.onActivity])
+  const runtimePaused = !active || orientationPaused
 
   const intervals = useMemo(
     () => tapTimes.slice(1).map((time, index) => time - tapTimes[index]),
@@ -56,7 +85,8 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
   const metrics = calculateTapMetrics(intervals, elapsed, invalidTaps, {
     expectedDurationMs: duration,
     interrupted,
-    personalRateRange: [0.8, 4]
+    personalRateRange: mode === 'demo' ? [0.8, 4] : undefined,
+    tapCount: tapTimes.length
   })
   const alternationFailed = metrics.validity.reasons.includes('左右交替錯誤過多')
   const assistance = evaluateTestAssistance({
@@ -64,12 +94,48 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
     assistanceRequested
   })
 
+  testStateRef.current = testState
+  activeRef.current = active
+
+  const getActiveElapsed = useCallback((now = performance.now()) => {
+    const currentPauseMs = pausedAt.current === null ? 0 : now - pausedAt.current
+    return Math.max(
+      0,
+      now - startTime.current - accumulatedPausedMs.current - currentPauseMs
+    )
+  }, [])
+
+  const syncRuntimePause = useCallback((now = performance.now()) => {
+    if (testStateRef.current !== 'running') {
+      pausedAt.current = null
+      return
+    }
+
+    const shouldPause = !activeRef.current || orientationPausedRef.current
+    if (shouldPause && pausedAt.current === null) {
+      pausedAt.current = now
+    } else if (!shouldPause && pausedAt.current !== null) {
+      accumulatedPausedMs.current += now - pausedAt.current
+      pausedAt.current = null
+    }
+  }, [])
+
+  const showTapFlash = useCallback((side: Side) => {
+    if (flashTimeout.current !== null) window.clearTimeout(flashTimeout.current)
+    setFlashSide(side)
+    flashTimeout.current = window.setTimeout(() => {
+      setFlashSide(null)
+      flashTimeout.current = null
+    }, 110)
+  }, [])
+
   const reset = useCallback((nextMode = mode, clearAssistanceHistory = false) => {
     setMode(nextMode)
     setTestState('ready')
     setCountdown(3)
     setRemainingMs(nextMode === 'demo' ? 6000 : 20000)
     setTapTimes([])
+    expectedSideRef.current = 'left'
     setExpectedSide('left')
     setInvalidTaps(0)
     setInterrupted(false)
@@ -77,30 +143,100 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
     setFlashSide(null)
     setAssistanceRequested(false)
     if (clearAssistanceHistory) setConsecutiveAlternationFailures(0)
+    testStateRef.current = 'ready'
     completionRecorded.current = false
     demoIndex.current = 0
-    demoElapsed.current = 0
+    rawEvents.current = []
+    captureStartedAt.current = ''
+    captureEndedAt.current = ''
+    captureSubject.current = ''
+    setCaptureId(crypto.randomUUID())
+    accumulatedPausedMs.current = 0
+    pausedAt.current = null
+    if (flashTimeout.current !== null) {
+      window.clearTimeout(flashTimeout.current)
+      flashTimeout.current = null
+    }
   }, [mode])
 
-  const registerTap = useCallback((side: Side, timestamp = performance.now()) => {
-    if (testState !== 'running') return
-    if (side !== expectedSide) {
+  const registerTap = useCallback((side: Side, modality: InputModality) => {
+    if (
+      testStateRef.current !== 'running' ||
+      mode === 'demo' ||
+      !activeRef.current ||
+      orientationPausedRef.current
+    ) return
+    const relativeTimeMs = getActiveElapsed()
+    // Preserve every original attempt before the legacy display rejects an
+    // incorrect side. The analysis owns its own cleaning and event audit.
+    rawEvents.current.push({ eventId: crypto.randomUUID(), relativeTimeMs, side, modality })
+    if (side !== expectedSideRef.current) {
       setInvalidTaps((value) => value + 1)
       return
     }
-    setTapTimes((times) => [...times, timestamp])
-    setExpectedSide(side === 'left' ? 'right' : 'left')
-    setFlashSide(side)
-    window.setTimeout(() => setFlashSide(null), 110)
-  }, [expectedSide, testState])
+    const nextExpectedSide = side === 'left' ? 'right' : 'left'
+    expectedSideRef.current = nextExpectedSide
+    setTapTimes((times) => [...times, relativeTimeMs])
+    setExpectedSide(nextExpectedSide)
+    showTapFlash(side)
+  }, [getActiveElapsed, mode, showTapFlash])
 
   useEffect(() => {
-    if (testState !== 'countdown') return
+    const handleOrientationGateChange = (event: Event) => {
+      const detail = (event as CustomEvent<OrientationGateChangeDetail>).detail
+      if (typeof detail?.active !== 'boolean' || detail.active === orientationPausedRef.current) {
+        return
+      }
+
+      const now = performance.now()
+      orientationPausedRef.current = detail.active
+      syncRuntimePause(now)
+
+      if (detail.active) {
+        if (flashTimeout.current !== null) {
+          window.clearTimeout(flashTimeout.current)
+          flashTimeout.current = null
+        }
+        setFlashSide(null)
+      }
+
+      setOrientationPaused(detail.active)
+    }
+
+    window.addEventListener(ORIENTATION_GATE_CHANGE_EVENT, handleOrientationGateChange)
+    return () => {
+      window.removeEventListener(ORIENTATION_GATE_CHANGE_EVENT, handleOrientationGateChange)
+    }
+  }, [syncRuntimePause])
+
+  useEffect(() => {
+    syncRuntimePause()
+    if (!active) {
+      if (flashTimeout.current !== null) {
+        window.clearTimeout(flashTimeout.current)
+        flashTimeout.current = null
+      }
+      setFlashSide(null)
+    }
+  }, [active, syncRuntimePause])
+
+  useEffect(() => () => {
+    if (flashTimeout.current !== null) window.clearTimeout(flashTimeout.current)
+  }, [])
+
+  useEffect(() => {
+    if (testState !== 'countdown' || runtimePaused) return
     const timer = window.setInterval(() => {
       setCountdown((value) => {
+        if (!activeRef.current || orientationPausedRef.current) return value
         if (value <= 1) {
           window.clearInterval(timer)
           startTime.current = performance.now()
+          captureStartedAt.current = new Date().toISOString()
+          captureSubject.current = workspace?.subjectId ?? (mode === 'demo' ? 'synthetic-demo' : developerSubjectId())
+          accumulatedPausedMs.current = 0
+          pausedAt.current = null
+          testStateRef.current = 'running'
           setTestState('running')
           return 0
         }
@@ -108,22 +244,25 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
       })
     }, 650)
     return () => window.clearInterval(timer)
-  }, [testState])
+  }, [mode, runtimePaused, testState])
 
   useEffect(() => {
-    if (testState !== 'running') return
+    if (testState !== 'running' || runtimePaused) return
     const ticker = window.setInterval(() => {
-      const elapsedNow = performance.now() - startTime.current
+      if (!activeRef.current || orientationPausedRef.current) return
+      const elapsedNow = getActiveElapsed()
       const nextRemaining = Math.max(0, duration - elapsedNow)
       setRemainingMs(nextRemaining)
       if (nextRemaining === 0) {
         window.clearInterval(ticker)
+        captureEndedAt.current = new Date().toISOString()
         setCompletedElapsedMs(duration)
+        testStateRef.current = 'complete'
         setTestState('complete')
       }
     }, 50)
     return () => window.clearInterval(ticker)
-  }, [duration, testState])
+  }, [duration, getActiveElapsed, runtimePaused, testState])
 
   useEffect(() => {
     if (testState !== 'complete' || completionRecorded.current) return
@@ -132,65 +271,132 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
   }, [alternationFailed, testState])
 
   useEffect(() => {
-    if (testState !== 'running' || mode !== 'demo') return
+    if (testState !== 'running' || mode !== 'demo' || runtimePaused) return
     const timers: number[] = []
+    const schedule: Array<{ elapsedMs: number; side: Side }> = [
+      { elapsedMs: 180, side: 'left' }
+    ]
     let accumulated = 180
-    const scheduleTap = (delay: number, side: Side) => {
-      timers.push(window.setTimeout(() => {
-        setTapTimes((times) => [...times, startTime.current + delay])
-        setExpectedSide(side === 'left' ? 'right' : 'left')
-        setFlashSide(side)
-        window.setTimeout(() => setFlashSide(null), 110)
-      }, delay))
-    }
-
-    scheduleTap(accumulated, 'left')
     DEMO_INTERVALS.forEach((interval, index) => {
       accumulated += interval
-      const delay = accumulated
-      const side: Side = index % 2 === 0 ? 'right' : 'left'
-      scheduleTap(delay, side)
+      schedule.push({
+        elapsedMs: accumulated,
+        side: index % 2 === 0 ? 'right' : 'left'
+      })
+    })
+
+    const elapsedAtSchedule = getActiveElapsed()
+    // The final scheduled tap lands just before the six-second boundary. Keep
+    // the deterministic sequence intact even when the browser timer wakes a
+    // few milliseconds late near completion.
+    schedule.slice(demoIndex.current).forEach(({ elapsedMs, side }, offset) => {
+      const index = demoIndex.current + offset
+      const delay = Math.max(0, elapsedMs - elapsedAtSchedule)
+      timers.push(window.setTimeout(() => {
+        if (
+          !activeRef.current ||
+          orientationPausedRef.current ||
+          testStateRef.current !== 'running'
+        ) return
+        demoIndex.current = Math.max(demoIndex.current, index + 1)
+        const nextExpectedSide = side === 'left' ? 'right' : 'left'
+        expectedSideRef.current = nextExpectedSide
+        rawEvents.current.push({ eventId: crypto.randomUUID(), relativeTimeMs: elapsedMs, side, modality: 'SYNTHETIC' })
+        setTapTimes((times) => [...times, elapsedMs])
+        setExpectedSide(nextExpectedSide)
+        showTapFlash(side)
+      }, delay))
     })
     return () => timers.forEach(window.clearTimeout)
-  }, [mode, testState])
+  }, [getActiveElapsed, mode, runtimePaused, showTapFlash, testState])
 
   useEffect(() => {
+    if (!active) return
     const handleKey = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() === 'f') registerTap('left')
-      if (event.key.toLowerCase() === 'j') registerTap('right')
+      if (event.key.toLowerCase() === 'f') registerTap('left', 'KEYBOARD')
+      if (event.key.toLowerCase() === 'j') registerTap('right', 'KEYBOARD')
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [registerTap])
+  }, [active, registerTap])
 
   const start = () => {
+    if (!activeRef.current || orientationPausedRef.current) return
     completionRecorded.current = false
+    if (workspace) {
+      const pads = Array.from(document.querySelectorAll('.w-measurement .tap-pad')).map(p => p.getBoundingClientRect())
+      captureDevice.current = `browser-ws1-${window.innerWidth}x${window.innerHeight}-dpr${window.devicePixelRatio}-pad${Math.round(pads[0]?.width??0)}x${Math.round(pads[0]?.height??0)}-gap${Math.round((pads[1]?.left??0)-(pads[0]?.right??0))}`
+    }
     setAssistanceRequested(false)
     setCountdown(3)
+    testStateRef.current = 'countdown'
     setTestState('countdown')
   }
 
   const interruptTest = () => {
+    if (!activeRef.current || orientationPausedRef.current) return
     setInterrupted(true)
-    setCompletedElapsedMs(Math.max(0, duration - remainingMs))
+    captureEndedAt.current = new Date().toISOString()
+    setCompletedElapsedMs(Math.min(duration, getActiveElapsed()))
+    testStateRef.current = 'complete'
     setTestState('complete')
   }
 
+  useEffect(() => {
+    if (!workspace) return
+    const changed = () => {
+      if (testStateRef.current !== 'running') return
+      setInterrupted(true)
+      captureEndedAt.current = new Date().toISOString()
+      setCompletedElapsedMs(Math.min(duration, getActiveElapsed()))
+      testStateRef.current = 'complete'
+      setTestState('complete')
+    }
+    const hidden = () => { if (document.visibilityState === 'hidden') changed() }
+    window.addEventListener('resize', changed)
+    document.addEventListener('visibilitychange', hidden)
+    return () => {window.removeEventListener('resize',changed);document.removeEventListener('visibilitychange',hidden)}
+  }, [!!workspace, duration, getActiveElapsed])
+
+  const completeInputInsufficient = testState === 'complete' && tapTimes.length < 3
   const qualityExplanation =
-    metrics.quality === '資料品質不足'
+    completeInputInsufficient
+      ? '本次有效輸入少於 3 次，輸入資料不足；無法完成動作特徵分析，也不納入個人參考。本次結果不影響依醫囑用藥。'
+      : metrics.quality === '資料品質不足'
       ? alternationFailed
         ? '左右交替錯誤過多，本次不納入動作趨勢；請依下方照護協助分流處理。'
         : `${metrics.validity.reasons.join('、')}。建議重測；本次不納入趨勢，也不影響原處方。`
       : metrics.speedRange === '低於個人近期範圍'
         ? '測試有效，但本次速度低於個人近期範圍。'
-        : '測試有效；動作特徵與測試有效性分開記錄。'
+        : mode === 'standard'
+          ? '本次操作通過既有時間與交替檢核；個人參考資料不足，尚未比較。'
+          : '模擬測試有效；固定展示範圍只供概念演示。'
+
+  const capturedModalities = new Set(rawEvents.current.map((event) => event.modality))
+  const capturedSession: MotionInput | null = testState === 'complete' && captureStartedAt.current ? {
+    schemaVersion: 'KBPD-MOTION-1',
+    sessionId: captureId,
+    subjectId: captureSubject.current,
+    origin: mode === 'demo' ? 'SYNTHETIC' : 'DEVELOPER_CAPTURE',
+    clinicalUse: false,
+    hand: 'BOTH',
+    device: captureDevice.current,
+    modality: capturedModalities.size > 1 ? 'MIXED' : rawEvents.current[0]?.modality ?? (mode === 'demo' ? 'SYNTHETIC' : 'UNKNOWN'),
+    protocolVersion: mode === 'demo' ? 'alternating-two-hand/demo6/v1' : workspace ? 'alternating-two-hand/standard20/workspace1' : 'alternating-two-hand/standard20/v1',
+    startedAt: captureStartedAt.current,
+    endedAt: captureEndedAt.current,
+    elapsedMs: completedElapsedMs,
+    expectedDurationMs: duration,
+    status: interrupted ? 'INTERRUPTED' : 'COMPLETED',
+    rawEvents: rawEvents.current.map((event) => ({ ...event }))
+  } : null
 
   return (
     <SceneShell
-      eyebrow="Scene 02 · Before dose"
-      title="服藥前，留下 20 秒動作快照"
+      eyebrow={workspace ? "MEASUREMENT / 左右交替操作" : "場景 02 · 服藥前評估"}
+      title={workspace ? "留下這次操作的原始紀錄" : "服藥前，留下 20 秒動作快照"}
       description="左右交替點擊。系統分開記錄測試有效性與動作特徵，不診斷疾病狀態，也不阻擋或延誤依醫囑用藥。"
-      aside={
+      aside={workspace ? undefined :
         <div className="mode-switch" aria-label="測試模式">
           <button
             className={mode === 'demo' ? 'active' : ''}
@@ -221,10 +427,10 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
               <StatusPill tone="blue" icon="loading">蒐集中</StatusPill>
             ) : testState === 'complete' ? (
               <StatusPill
-                tone={metrics.quality === '測試有效' ? 'teal' : 'amber'}
-                icon={metrics.quality === '測試有效' ? 'success' : 'alert'}
+                tone={!completeInputInsufficient && metrics.quality === '測試有效' ? 'teal' : 'amber'}
+                icon={!completeInputInsufficient && metrics.quality === '測試有效' ? 'success' : 'alert'}
               >
-                {metrics.quality}
+                {completeInputInsufficient ? '輸入資料不足' : metrics.quality}
               </StatusPill>
             ) : (
               <StatusPill>準備就緒</StatusPill>
@@ -233,6 +439,34 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
 
           <div className="progress-track" aria-hidden="true">
             <span style={{ transform: `scaleX(${1 - remainingMs / duration})` }} />
+          </div>
+
+          <div className="test-actions">
+            {testState === 'ready' ? (
+              <button className="primary-button large" onClick={start}>
+                <Play /> {mode === 'demo' ? '播放可重現模擬' : '開始 20 秒測試'}
+              </button>
+            ) : testState === 'complete' ? (
+              <>
+                <button className="secondary-button" onClick={() => reset(mode, false)}>
+                  <RotateCcw /> 重新測試
+                </button>
+                <button className="primary-button" onClick={onNext}>
+                  {workspace ? '查看個案總覽' : '前往發藥核對'} <ArrowRight />
+                </button>
+              </>
+            ) : (
+              <>
+                <p aria-live="polite">
+                  {mode === 'demo' ? '正在播放固定節奏的概念展示…' : `下一次：${expectedSide === 'left' ? '左側' : '右側'}`}
+                </p>
+                {mode === 'standard' ? (
+                  <button className="text-button interrupt-button" onClick={interruptTest}>
+                    中止測試
+                  </button>
+                ) : null}
+              </>
+            )}
           </div>
 
           <div className={`tap-controls state-${testState}`}>
@@ -252,8 +486,8 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
             ) : null}
             <button
               className={`tap-pad left ${expectedSide === 'left' && testState === 'running' ? 'expected' : ''} ${flashSide === 'left' ? 'pressed' : ''}`}
-              onPointerDown={() => registerTap('left')}
-              disabled={testState !== 'running' || mode === 'demo'}
+              onPointerDown={() => registerTap('left', 'POINTER')}
+              disabled={testState !== 'running' || mode === 'demo' || runtimePaused}
               aria-label="左側點擊區，可按 F 鍵"
             >
               <span>左</span>
@@ -261,48 +495,20 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
             </button>
             <button
               className={`tap-pad right ${expectedSide === 'right' && testState === 'running' ? 'expected' : ''} ${flashSide === 'right' ? 'pressed' : ''}`}
-              onPointerDown={() => registerTap('right')}
-              disabled={testState !== 'running' || mode === 'demo'}
+              onPointerDown={() => registerTap('right', 'POINTER')}
+              disabled={testState !== 'running' || mode === 'demo' || runtimePaused}
               aria-label="右側點擊區，可按 J 鍵"
             >
               <span>右</span>
               <small>J 鍵</small>
             </button>
           </div>
-
-          <div className="test-actions">
-            {testState === 'ready' ? (
-              <button className="primary-button large" onClick={start}>
-                <Play /> {mode === 'demo' ? '播放可重現模擬' : '開始 20 秒測試'}
-              </button>
-            ) : testState === 'complete' ? (
-              <>
-                <button className="secondary-button" onClick={() => reset(mode, false)}>
-                  <RotateCcw /> 重新測試
-                </button>
-                <button className="primary-button" onClick={onNext}>
-                  前往發藥核對 <ArrowRight />
-                </button>
-              </>
-            ) : (
-              <>
-                <p aria-live="polite">
-                  {mode === 'demo' ? '正在播放固定節奏的概念展示…' : `下一次：${expectedSide === 'left' ? '左側' : '右側'}`}
-                </p>
-                {mode === 'standard' ? (
-                  <button className="text-button interrupt-button" onClick={interruptTest}>
-                    中止測試
-                  </button>
-                ) : null}
-              </>
-            )}
-          </div>
         </section>
 
         <aside className="metrics-panel" aria-live="polite">
           <header>
             <span><Gauge /> 即時計算</span>
-            <small>概念展示／模擬資料</small>
+            <small>{mode === 'demo' ? 'SYNTHETIC · 固定合成展示' : 'DEVELOPER_CAPTURE · 開發者操作'}</small>
           </header>
           <div className="metric-grid">
             <Metric label="有效點擊" value={`${metrics.count}`} unit="次" />
@@ -325,10 +531,10 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
               unit="%"
             />
           </div>
-          <div className={`quality-card ${metrics.quality === '資料品質不足' ? 'warning' : ''}`}>
-            {testState === 'complete' && metrics.quality === '測試有效'
+          <div className={`quality-card ${completeInputInsufficient || metrics.quality === '資料品質不足' ? 'warning' : ''}`}>
+            {testState === 'complete' && !completeInputInsufficient && metrics.quality === '測試有效'
               ? <Check />
-              : metrics.quality === '資料品質不足'
+              : completeInputInsufficient || metrics.quality === '資料品質不足'
                 ? <CircleAlert />
                 : <Zap />}
             <div>
@@ -337,7 +543,9 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
                 {testState === 'ready'
                   ? '等待測試'
                   : testState === 'complete'
-                    ? metrics.speedRange === '低於個人近期範圍'
+                    ? completeInputInsufficient
+                      ? '輸入資料不足'
+                      : metrics.speedRange === '低於個人近期範圍'
                       ? '動作速度偏低'
                       : metrics.quality
                     : metrics.quality}
@@ -356,7 +564,7 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
             >
               <BellRing />
               <div>
-                <small>照護協助分流</small>
+                <small>照護協助分流（本機展示，未傳送通知）</small>
                 <strong>{assistance.headline}</strong>
                 <p>
                   {assistance.notifyCaregiver
@@ -384,10 +592,11 @@ export function TapTestScene({ onNext }: TapTestSceneProps) {
             </div>
           ) : null}
           <p className="metric-note">
-            <Info />「運動反應分數」是原型指標，不是診斷，也不是臨床量表替代品。
+            <Info />{mode === 'demo' ? '固定節奏與比較範圍均為模擬展示，不能當作個人基線。' : '目前為開發者動作擷取；需保存分析後檢視樣本品質與參考條件。'}不是診斷或臨床量表替代品。
           </p>
         </aside>
       </div>
+      {workspace ? workspace.renderResult(capturedSession) : <AnalysisPanel key={captureId} session={capturedSession} />}
     </SceneShell>
   )
 }

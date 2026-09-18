@@ -15,20 +15,33 @@ import { StatusPill } from '../components/StatusPill'
 
 interface FollowUpSceneProps {
   onNext: () => void
+  active?: boolean
 }
 
-export function FollowUpScene({ onNext }: FollowUpSceneProps) {
+export function FollowUpScene({ onNext, active = true }: FollowUpSceneProps) {
   const [reminder, setReminder] = useState<'gentle' | 'caregiver' | 'done'>('gentle')
   const [previewMinutes, setPreviewMinutes] = useState(60)
   const [running, setRunning] = useState(false)
+  const [orientationPaused, setOrientationPaused] = useState(
+    () => document.documentElement.dataset.orientationGateActive === 'true'
+  )
 
   useEffect(() => {
-    if (!running || previewMinutes === 0) return
+    const handleOrientationGateChange = (event: Event) => {
+      const active = (event as CustomEvent<{ active?: boolean }>).detail?.active
+      if (typeof active === 'boolean') setOrientationPaused(active)
+    }
+    window.addEventListener('kinebalance:orientation-gate-change', handleOrientationGateChange)
+    return () => window.removeEventListener('kinebalance:orientation-gate-change', handleOrientationGateChange)
+  }, [])
+
+  useEffect(() => {
+    if (!active || !running || previewMinutes === 0 || orientationPaused) return
     const timer = window.setInterval(() => {
       setPreviewMinutes((value) => Math.max(0, value - 5))
     }, 120)
     return () => window.clearInterval(timer)
-  }, [previewMinutes, running])
+  }, [active, orientationPaused, previewMinutes, running])
 
   useEffect(() => {
     if (previewMinutes === 0) {
@@ -45,7 +58,7 @@ export function FollowUpScene({ onNext }: FollowUpSceneProps) {
 
   return (
     <SceneShell
-      eyebrow="Scene 04 · After dose"
+      eyebrow="場景 04 · 服藥後追蹤"
       title="約 60 分鐘後，再看一次變化"
       description="服藥後測試形成同一時段的前後對照。提醒可調整，但未完成測試不會阻擋本次或下一次正常發藥。"
       aside={<StatusPill tone="teal" icon="success">14:02 已發藥</StatusPill>}

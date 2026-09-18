@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { gsap } from 'gsap'
+import { animate, createScope, createTimeline, set, stagger } from 'animejs'
 import {
   ArrowRight,
   BellRing,
@@ -30,6 +30,7 @@ export type DispensePhase =
 
 interface DispenseSceneProps {
   onNext: () => void
+  active?: boolean
 }
 
 interface PillDefinition {
@@ -75,11 +76,61 @@ const phaseDelays: Partial<Record<DispensePhase, number>> = {
   'retry-route': 1750
 }
 
-export function DispenseScene({ onNext }: DispenseSceneProps) {
+function usePausableTimeout(
+  callback: () => void,
+  delay: number | null,
+  paused: boolean,
+  resetKey: string
+) {
+  const callbackRef = useRef(callback)
+  const timerStateRef = useRef({
+    key: resetKey,
+    remaining: delay,
+    completed: false
+  })
+  callbackRef.current = callback
+
+  useEffect(() => {
+    if (timerStateRef.current.key !== resetKey) {
+      timerStateRef.current = {
+        key: resetKey,
+        remaining: delay,
+        completed: false
+      }
+    }
+
+    const timerState = timerStateRef.current
+    if (delay === null || paused || timerState.completed) return
+    if (timerState.remaining === null) timerState.remaining = delay
+
+    const startedAt = performance.now()
+    const timer = window.setTimeout(() => {
+      timerState.completed = true
+      timerState.remaining = 0
+      callbackRef.current()
+    }, timerState.remaining)
+
+    return () => {
+      window.clearTimeout(timer)
+      if (!timerState.completed && timerState.remaining !== null) {
+        timerState.remaining = Math.max(
+          0,
+          timerState.remaining - (performance.now() - startedAt)
+        )
+      }
+    }
+  }, [delay, paused, resetKey])
+}
+
+export function DispenseScene({ onNext, active = true }: DispenseSceneProps) {
   const [scenario, setScenario] = useState<Scenario>('normal')
   const [phase, setPhase] = useState<DispensePhase>('idle')
   const [inspectionStep, setInspectionStep] = useState(0)
   const [caregiverConfirmed, setCaregiverConfirmed] = useState(false)
+  const [orientationPaused, setOrientationPaused] = useState(
+    () => document.documentElement.dataset.orientationGateActive === 'true'
+  )
+  const runtimePaused = orientationPaused || !active
 
   const reset = (nextScenario = scenario) => {
     setScenario(nextScenario)
@@ -89,36 +140,54 @@ export function DispenseScene({ onNext }: DispenseSceneProps) {
   }
 
   useEffect(() => {
-    if (!phaseDelays[phase]) return
-    const nextPhase: Partial<Record<DispensePhase, DispensePhase>> = {
-      release: 'inspect',
-      inspect: 'route',
-      route: scenario === 'anomaly' ? 'awaiting-caregiver' : 'complete',
-      'retry-release': 'retry-inspect',
-      'retry-inspect': 'retry-route',
-      'retry-route': 'complete'
+    const handleOrientationGateChange = (event: Event) => {
+      const active = (event as CustomEvent<{ active?: boolean }>).detail?.active
+      if (typeof active === 'boolean') setOrientationPaused(active)
     }
-    const timer = window.setTimeout(
-      () => setPhase(nextPhase[phase] ?? 'complete'),
-      phaseDelays[phase]
-    )
-    return () => window.clearTimeout(timer)
-  }, [phase, scenario])
+    window.addEventListener('kinebalance:orientation-gate-change', handleOrientationGateChange)
+    return () => window.removeEventListener('kinebalance:orientation-gate-change', handleOrientationGateChange)
+  }, [])
+
+  const nextPhase: Partial<Record<DispensePhase, DispensePhase>> = {
+    release: 'inspect',
+    inspect: 'route',
+    route: scenario === 'anomaly' ? 'awaiting-caregiver' : 'complete',
+    'retry-release': 'retry-inspect',
+    'retry-inspect': 'retry-route',
+    'retry-route': 'complete'
+  }
+  usePausableTimeout(
+    () => setPhase(nextPhase[phase] ?? 'complete'),
+    phaseDelays[phase] ?? null,
+    runtimePaused,
+    `${scenario}:${phase}`
+  )
 
   const inspecting = phase === 'inspect' || phase === 'retry-inspect'
 
   useEffect(() => {
     if (!inspecting) {
       setInspectionStep(0)
-      return
     }
-    const timers = [
-      window.setTimeout(() => setInspectionStep(1), 900),
-      window.setTimeout(() => setInspectionStep(2), 1320),
-      window.setTimeout(() => setInspectionStep(3), 1740)
-    ]
-    return () => timers.forEach(window.clearTimeout)
   }, [inspecting])
+  usePausableTimeout(
+    () => setInspectionStep((value) => Math.max(value, 1)),
+    inspecting ? 900 : null,
+    runtimePaused,
+    `inspection-1:${phase}`
+  )
+  usePausableTimeout(
+    () => setInspectionStep((value) => Math.max(value, 2)),
+    inspecting ? 1320 : null,
+    runtimePaused,
+    `inspection-2:${phase}`
+  )
+  usePausableTimeout(
+    () => setInspectionStep((value) => Math.max(value, 3)),
+    inspecting ? 1740 : null,
+    runtimePaused,
+    `inspection-3:${phase}`
+  )
 
   const initialPills = scenario === 'normal' ? NORMAL_PILLS : ANOMALY_PILLS
   const retrying =
@@ -157,7 +226,7 @@ export function DispenseScene({ onNext }: DispenseSceneProps) {
 
   return (
     <SceneShell
-      eyebrow="Scene 03 · Verified dispense"
+      eyebrow="場景 03 · 實體發藥核對"
       title="每次交付，都經過實體核對"
       description="模型藥物依序進入核對盤；只有重量、影像、卡藥或重複出藥風險，才能暫停本次自動交付並等待照顧者人工確認。"
       aside={
@@ -186,15 +255,16 @@ export function DispenseScene({ onNext }: DispenseSceneProps) {
           <div className="machine-toolbar">
             <div>
               <span className={`live-dot ${running ? 'pulsing' : ''}`} />
-              <strong>DoseLoop Home · DL-01</strong>
+              <strong>KineBalance Home · KB-01</strong>
             </div>
-            <span>2D 動態驗證圖 · GSAP timeline</span>
+            <span>2D 動態驗證圖 · Anime.js timeline</span>
           </div>
           <DispenserDiagram
             scenario={scenario}
             phase={phase}
             inspectionStep={inspectionStep}
             caregiverConfirmed={caregiverConfirmed}
+            paused={runtimePaused}
           />
           <div className="diagram-legend">
             <span><i className="legend-teal" /> 核對通過路徑</span>
@@ -379,14 +449,19 @@ function DispenserDiagram({
   scenario,
   phase,
   inspectionStep,
-  caregiverConfirmed
+  caregiverConfirmed,
+  paused
 }: {
   scenario: Scenario
   phase: DispensePhase
   inspectionStep: number
   caregiverConfirmed: boolean
+  paused: boolean
 }) {
   const svgRef = useRef<SVGSVGElement>(null)
+  const activeAnimationsRef = useRef<Array<
+    ReturnType<typeof animate> | ReturnType<typeof createTimeline>
+  >>([])
   const initialPills = scenario === 'normal' ? NORMAL_PILLS : ANOMALY_PILLS
   const inspecting = phase === 'inspect' || phase === 'retry-inspect'
   const scanning = inspecting && inspectionStep === 0
@@ -403,8 +478,28 @@ function DispenserDiagram({
     const root = svgRef.current
     if (!root) return
 
-    const context = gsap.context(() => {
+    const activeAnimations: Array<
+      ReturnType<typeof animate> | ReturnType<typeof createTimeline>
+    > = []
+
+    const scope = createScope({ root })
+    scope.add(() => {
       const pills = Array.from(root.querySelectorAll<SVGGElement>('.pill-token'))
+      const idleModules = root.querySelectorAll<SVGElement>(
+        '.module, .camera-stand, .inspection-tray, .split-gate'
+      )
+      const discRotor = root.querySelector<SVGGElement>('.disc-rotor')
+      const discIndexLight = root.querySelector<SVGCircleElement>('.disc-index-light')
+      const inspectionTray = root.querySelector<SVGGElement>('.inspection-tray')
+      const visionBoundary = root.querySelector<SVGGElement>('.vision-boundary')
+      const cameraIndicator = root.querySelector<SVGCircleElement>('.camera-indicator')
+      const scanSweep = root.querySelector<SVGRectElement>('.scan-sweep')
+      const recognitionBoxes = Array.from(
+        root.querySelectorAll<SVGRectElement>('.recognition-boxes rect')
+      )
+      const gateFlap = root.querySelector<SVGPathElement>('.gate-flap')
+      const pickupDrawer = root.querySelector<SVGGElement>('.pickup-drawer')
+      const quarantineDrawer = root.querySelector<SVGGElement>('.quarantine-drawer')
       const reducedMotion =
         typeof window.matchMedia === 'function' &&
         window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -427,183 +522,297 @@ function DispenserDiagram({
       const placeFromLocation = (pill: SVGGElement) => {
         const location = pill.dataset.location
         if (location === 'inspection-tray') {
-          gsap.set(pill, { ...pointFor(pill, 'tray'), autoAlpha: 1, scale: 1, rotation: 0 })
+          set(pill, { ...pointFor(pill, 'tray'), opacity: 1, scale: 1, rotate: 0 })
         } else if (location === 'pickup-drawer') {
-          gsap.set(pill, { ...pointFor(pill, 'pickup'), autoAlpha: 1, scale: 0.92, rotation: 0 })
+          set(pill, { ...pointFor(pill, 'pickup'), opacity: 1, scale: 0.92, rotate: 0 })
         } else if (location === 'quarantine-drawer') {
-          gsap.set(pill, { ...pointFor(pill, 'quarantine'), autoAlpha: 1, scale: 0.92, rotation: 0 })
+          set(pill, { ...pointFor(pill, 'quarantine'), opacity: 1, scale: 0.92, rotate: 0 })
         } else {
-          gsap.set(pill, { ...pointFor(pill, 'source'), autoAlpha: 0, scale: 0.86, rotation: -8 })
+          set(pill, { ...pointFor(pill, 'source'), opacity: 0, scale: 0.86, rotate: -8 })
         }
       }
 
       pills.forEach(placeFromLocation)
-      gsap.set(pills, { transformOrigin: '50% 50%', willChange: 'transform,opacity' })
+      set(pills, { transformOrigin: '50% 50%', willChange: 'transform,opacity' })
 
       if (reducedMotion) return
 
       if (phase === 'idle') {
-        gsap.fromTo(
-          root.querySelectorAll('.module, .camera-stand, .inspection-tray, .split-gate'),
-          { y: 7, autoAlpha: 0.7 },
-          { y: 0, autoAlpha: 1, duration: 0.55, stagger: 0.045, ease: 'power2.out' }
-        )
+        activeAnimations.push(animate(idleModules, {
+          y: { from: 7, to: 0 },
+          opacity: { from: 0.7, to: 1 },
+          duration: 550,
+          delay: stagger(45),
+          ease: 'outCubic'
+        }))
         return
       }
 
       if (phase === 'release' || phase === 'retry-release') {
-        const master = gsap.timeline({ defaults: { overwrite: 'auto' } })
-        master.addLabel('disc-entry', 0.24)
-        master.addLabel('disc-index', 0.54)
-        master.addLabel('tray-exit', 1.28)
+        const master = createTimeline({ defaults: { composition: 'replace' } })
+        activeAnimations.push(master)
+        master
+          .label('disc-entry', 240)
+          .label('disc-index', 540)
+          .label('tray-exit', 1280)
+
         activePills.forEach((pill, index) => {
           const destination = pointFor(pill, 'tray')
-          const pillTimeline = gsap.timeline()
-            .set(pill, { ...pointFor(pill, 'source'), autoAlpha: 0, scale: 0.82, rotation: -12 })
-            .to(pill, { autoAlpha: 1, scale: 0.94, duration: 0.16, ease: 'power1.out' })
-            .to(pill, { x: 278, y: 207, rotation: 9, duration: 0.27, ease: 'power2.in' })
-            .to(pill, { x: 300, y: 225, rotation: -4, duration: 0.23, ease: 'power2.out' })
-            .to(pill, { x: 323, y: 216, rotation: -9, duration: 0.22, ease: 'sine.inOut' })
-            .to(pill, { x: 356, y: 220, rotation: 4, duration: 0.22, ease: 'sine.inOut' })
-            .to(pill, { x: 390, y: 237, rotation: 9, duration: 0.23, ease: 'sine.inOut' })
-            .to(pill, { x: 431, y: 249, rotation: 2, duration: 0.23, ease: 'power2.out' })
-            .to(pill, { x: 472, y: 254, rotation: 5, duration: 0.21, ease: 'sine.inOut' })
-            .to(pill, {
+          const start = index * 120
+          master
+            .set(pill, {
+              ...pointFor(pill, 'source'),
+              opacity: 0,
+              scale: 0.82,
+              rotate: -12
+            }, start)
+            .add(pill, {
+              opacity: { from: 0, to: 1 },
+              scale: { from: 0.82, to: 0.94 },
+              duration: 160,
+              ease: 'outQuad'
+            }, start)
+            .add(pill, {
+              x: 278,
+              y: 207,
+              rotate: 9,
+              duration: 270,
+              ease: 'inCubic'
+            }, start + 160)
+            .add(pill, {
+              x: 300,
+              y: 225,
+              rotate: -4,
+              duration: 230,
+              ease: 'outCubic'
+            }, start + 430)
+            .add(pill, {
+              x: 323,
+              y: 216,
+              rotate: -9,
+              duration: 220,
+              ease: 'inOutSine'
+            }, start + 660)
+            .add(pill, {
+              x: 356,
+              y: 220,
+              rotate: 4,
+              duration: 220,
+              ease: 'inOutSine'
+            }, start + 880)
+            .add(pill, {
+              x: 390,
+              y: 237,
+              rotate: 9,
+              duration: 230,
+              ease: 'inOutSine'
+            }, start + 1100)
+            .add(pill, {
+              x: 431,
+              y: 249,
+              rotate: 2,
+              duration: 230,
+              ease: 'outCubic'
+            }, start + 1330)
+            .add(pill, {
+              x: 472,
+              y: 254,
+              rotate: 5,
+              duration: 210,
+              ease: 'inOutSine'
+            }, start + 1560)
+            .add(pill, {
               ...destination,
-              rotation: 0,
+              rotate: 0,
               scale: 1,
-              duration: 0.32,
-              ease: 'back.out(1.25)'
-            })
-          master.add(pillTimeline, index * 0.12)
+              duration: 320,
+              ease: 'outCubic'
+            }, start + 1770)
         })
-        master.fromTo(
-          root.querySelector('.disc-rotor'),
-          { rotation: 0, svgOrigin: '330 241' },
-          {
-            rotation: 60 * activePills.length,
-            duration: 1.22,
-            ease: 'power2.inOut'
-          },
-          'disc-entry'
-        )
-        master.fromTo(
-          root.querySelector('.disc-index-light'),
-          { autoAlpha: 0.45, scale: 0.75, svgOrigin: '399 241' },
-          {
-            autoAlpha: 1,
-            scale: 1.45,
-            duration: 0.22,
-            repeat: activePills.length * 2 - 1,
-            yoyo: true,
-            ease: 'sine.inOut'
-          },
-          'disc-index'
-        )
-        master.fromTo(
-          root.querySelector('.inspection-tray'),
-          { y: 0 },
-          { y: 3, duration: 0.18, ease: 'power2.out', yoyo: true, repeat: 1 },
-          'tray-exit'
-        )
+
+        if (discRotor) {
+          set(discRotor, { transformOrigin: '330px 241px' })
+          master.add(discRotor, {
+            rotate: { from: 0, to: 60 * activePills.length },
+            duration: 1220,
+            ease: 'inOutCubic'
+          }, 'disc-entry')
+        }
+        if (discIndexLight) {
+          set(discIndexLight, { transformOrigin: '399px 241px' })
+          master.add(discIndexLight, {
+            opacity: { from: 0.45, to: 1 },
+            scale: { from: 0.75, to: 1.45 },
+            duration: 220,
+            loop: activePills.length * 2 - 1,
+            alternate: true,
+            ease: 'inOutSine'
+          }, 'disc-index')
+        }
+        if (inspectionTray) {
+          master.add(inspectionTray, {
+            y: { from: 0, to: 3 },
+            duration: 180,
+            loop: 1,
+            alternate: true,
+            ease: 'outCubic'
+          }, 'tray-exit')
+        }
         return
       }
 
       if (phase === 'inspect' || phase === 'retry-inspect') {
         activePills.forEach((pill) => {
-          gsap.set(pill, { ...pointFor(pill, 'tray'), autoAlpha: 1, scale: 1, rotation: 0 })
+          set(pill, { ...pointFor(pill, 'tray'), opacity: 1, scale: 1, rotate: 0 })
         })
-        const scanTimeline = gsap.timeline({ defaults: { overwrite: 'auto' } })
-        scanTimeline
-          .fromTo('.vision-boundary', { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.28 })
-          .fromTo(
-            '.camera-indicator',
-            { autoAlpha: 0.4, scale: 0.8, svgOrigin: '590 122' },
-            { autoAlpha: 1, scale: 1.45, duration: 0.24, repeat: 3, yoyo: true, ease: 'sine.inOut' },
-            '<'
-          )
-          .fromTo(
-            '.scan-sweep',
-            { y: -18, autoAlpha: 0.18 },
-            { y: 78, autoAlpha: 0.78, duration: 0.82, ease: 'sine.inOut' },
-            '<0.08'
-          )
-          .fromTo(
-            '.recognition-boxes rect',
-            { autoAlpha: 0, scale: 0.74, transformOrigin: '50% 50%' },
-            { autoAlpha: 1, scale: 1, duration: 0.28, stagger: 0.11, ease: 'back.out(1.6)' },
-            '-=0.22'
-          )
-          .to(
-            activePills,
-            { scale: 1.06, duration: 0.24, stagger: 0.08, yoyo: true, repeat: 1, ease: 'sine.inOut' },
-            '-=0.18'
-          )
+        const scanTimeline = createTimeline({ defaults: { composition: 'replace' } })
+        activeAnimations.push(scanTimeline)
+
+        if (visionBoundary) {
+          scanTimeline.add(visionBoundary, {
+            opacity: { from: 0, to: 1 },
+            duration: 280
+          }, 0)
+        }
+        if (cameraIndicator) {
+          set(cameraIndicator, { transformOrigin: '590px 122px' })
+          scanTimeline.add(cameraIndicator, {
+            opacity: { from: 0.4, to: 1 },
+            scale: { from: 0.8, to: 1.45 },
+            duration: 240,
+            loop: 3,
+            alternate: true,
+            ease: 'inOutSine'
+          }, 0)
+        }
+        if (scanSweep) {
+          scanTimeline.add(scanSweep, {
+            y: { from: -18, to: 78 },
+            opacity: { from: 0.18, to: 0.78 },
+            duration: 820,
+            ease: 'inOutSine'
+          }, 80)
+        }
+        if (recognitionBoxes.length) {
+          set(recognitionBoxes, { transformOrigin: '50% 50%' })
+          scanTimeline.add(recognitionBoxes, {
+            opacity: { from: 0, to: 1 },
+            scale: { from: 0.74, to: 1 },
+            duration: 280,
+            delay: stagger(110),
+            ease: 'outCubic'
+          }, '-=220')
+        }
+        scanTimeline.add(activePills, {
+          scale: 1.06,
+          duration: 240,
+          delay: stagger(80),
+          loop: 1,
+          alternate: true,
+          ease: 'inOutSine'
+        }, '-=180')
         return
       }
 
       if (phase === 'route' || phase === 'retry-route') {
         const toQuarantine = scenario === 'anomaly' && phase === 'route'
         const destination = toQuarantine ? 'quarantine' : 'pickup'
-        const drawerSelector = toQuarantine ? '.quarantine-drawer' : '.pickup-drawer'
+        const drawer = toQuarantine ? quarantineDrawer : pickupDrawer
         const gateRotation = toQuarantine ? 27 : -26
-        const master = gsap.timeline({ defaults: { overwrite: 'auto' } })
+        const master = createTimeline({ defaults: { composition: 'replace' } })
+        activeAnimations.push(master)
 
-        master.to('.gate-flap', {
-          rotation: gateRotation,
-          duration: 0.34,
-          ease: 'power3.out',
-          transformOrigin: '50% 50%'
-        })
+        if (gateFlap) {
+          set(gateFlap, { transformOrigin: '50% 50%' })
+          master.add(gateFlap, {
+            rotate: gateRotation,
+            duration: 340,
+            ease: 'outQuart'
+          }, 0)
+        }
         activePills.forEach((pill, index) => {
           const finalPoint = pointFor(pill, destination)
-          const pillTimeline = gsap.timeline()
-            .set(pill, { ...pointFor(pill, 'tray'), autoAlpha: 1, scale: 1, rotation: 0 })
-            .to(pill, { x: 554, y: 341, rotation: toQuarantine ? 8 : -8, duration: 0.34, ease: 'power2.in' })
-            .to(pill, {
+          const start = 180 + index * 120
+          master
+            .set(pill, {
+              ...pointFor(pill, 'tray'),
+              opacity: 1,
+              scale: 1,
+              rotate: 0
+            }, start)
+            .add(pill, {
+              x: 554,
+              y: 341,
+              rotate: toQuarantine ? 8 : -8,
+              duration: 340,
+              ease: 'inCubic'
+            }, start)
+            .add(pill, {
               x: toQuarantine ? 592 : 510,
               y: 377,
-              rotation: toQuarantine ? 14 : -14,
-              duration: 0.36,
-              ease: 'sine.inOut'
-            })
-            .to(pill, {
+              rotate: toQuarantine ? 14 : -14,
+              duration: 360,
+              ease: 'inOutSine'
+            }, start + 340)
+            .add(pill, {
               ...finalPoint,
-              rotation: 0,
+              rotate: 0,
               scale: 0.92,
-              duration: 0.46,
-              ease: 'power3.out'
-            })
-          master.add(pillTimeline, 0.18 + index * 0.12)
+              duration: 460,
+              ease: 'outQuart'
+            }, start + 700)
         })
-        master.fromTo(
-          drawerSelector,
-          { y: 0 },
-          { y: -4, duration: 0.2, ease: 'power2.out', yoyo: true, repeat: 1 },
-          0.82
-        )
+        if (drawer) {
+          master.add(drawer, {
+            y: { from: 0, to: -4 },
+            duration: 200,
+            loop: 1,
+            alternate: true,
+            ease: 'outCubic'
+          }, 820)
+        }
         return
       }
 
       const settledDrawer =
         phase === 'awaiting-caregiver'
-          ? '.quarantine-drawer'
+          ? quarantineDrawer
           : phase === 'complete'
             ? scenario === 'normal' || caregiverConfirmed
-              ? '.pickup-drawer'
-              : '.quarantine-drawer'
+              ? pickupDrawer
+              : quarantineDrawer
             : null
       if (settledDrawer) {
-        gsap.fromTo(
-          settledDrawer,
-          { scale: 0.99, transformOrigin: '50% 50%' },
-          { scale: 1, duration: 0.3, ease: 'power2.out' }
-        )
+        set(settledDrawer, { transformOrigin: '50% 50%' })
+        activeAnimations.push(animate(settledDrawer, {
+          scale: { from: 0.99, to: 1 },
+          duration: 300,
+          ease: 'outCubic'
+        }))
       }
-    }, root)
+    })
 
-    return () => context.revert()
+    const setPaused = (paused: boolean) => {
+      activeAnimations.forEach((animation) => {
+        if (paused) animation.pause()
+        else animation.resume()
+      })
+    }
+    activeAnimationsRef.current = activeAnimations
+    setPaused(paused)
+
+    return () => {
+      activeAnimationsRef.current = []
+      scope.revert()
+    }
   }, [caregiverConfirmed, phase, scenario])
+
+  useEffect(() => {
+    activeAnimationsRef.current.forEach((animation) => {
+      if (paused) animation.pause()
+      else animation.resume()
+    })
+  }, [paused])
 
   return (
     <svg
