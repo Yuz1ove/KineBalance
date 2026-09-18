@@ -2,9 +2,9 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
 import { afterEach, vi } from 'vitest'
 
-afterEach(() => cleanup())
+afterEach(() => { if (typeof document !== 'undefined') cleanup() })
 
-Object.defineProperty(window, 'scrollTo', {
+if (typeof window !== 'undefined') Object.defineProperty(window, 'scrollTo', {
   writable: true,
   value: vi.fn()
 })
@@ -33,11 +33,11 @@ class MockIntersectionObserver implements IntersectionObserver {
   }
 }
 
-Object.defineProperty(window, 'IntersectionObserver', {
+if (typeof window !== 'undefined') Object.defineProperty(window, 'IntersectionObserver', {
   writable: true,
   value: MockIntersectionObserver
 })
-Object.defineProperty(globalThis, 'IntersectionObserver', {
+if (typeof window !== 'undefined') Object.defineProperty(globalThis, 'IntersectionObserver', {
   writable: true,
   value: MockIntersectionObserver
 })

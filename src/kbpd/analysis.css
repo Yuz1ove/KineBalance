@@ -1,0 +1,28 @@
+.kbpd-analysis { margin-top: 28px; padding: clamp(16px, 3vw, 30px); border: 1px solid #b9c9c5; border-radius: 20px; background: #f9fcfb; color: #243a37; line-height: 1.65; overflow-wrap: anywhere; }
+.kbpd-analysis-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.kbpd-eyebrow { font-size: 12px; letter-spacing: .06em; color: #4e6b65; }
+.kbpd-analysis h2 { margin: 4px 0 8px; font-size: clamp(20px, 3vw, 27px); }
+.kbpd-analysis h3 { margin: 0 0 8px; font-size: 17px; }
+.kbpd-analysis p { margin: 10px 0; }
+.kbpd-analysis ul { padding-left: 20px; margin: 8px 0; }
+.kbpd-tag { border: 1px solid #8eaaa2; border-radius: 99px; font-size: 12px; padding: 5px 10px; }
+.kbpd-submit-row, .kbpd-status-line { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 20px 0; }
+.kbpd-status-line { border-left: 3px solid #328171; padding: 8px 12px; background: #e9f3ef; }
+.kbpd-status-line span, .kbpd-submit-row span { font-size: 13px; }
+.kbpd-observations { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 20px 0; }
+.kbpd-observation { padding: 15px; border: 1px solid #d5e2dd; border-radius: 12px; background: white; display: flex; flex-direction: column; gap: 6px; }
+.kbpd-observation strong { font-size: 25px; line-height: 1.4; }
+.kbpd-observation small { font-size: 12px; font-weight: normal; }
+.kbpd-result-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin: 20px 0; }
+.kbpd-result-columns section { padding-top: 15px; border-top: 1px solid #d2dfda; }
+.kbpd-record-link { display: flex; flex-direction: column; gap: 10px; padding: 16px 0; }
+.kbpd-record-link a { font-weight: 600; text-decoration: underline; color: #176454; }
+.kbpd-provenance { border-top: 1px solid #c5d8d0; padding-top: 12px; }
+.kbpd-provenance summary { cursor: pointer; font-weight: 600; }
+.kbpd-provenance dt { font-weight: 600; margin-top: 15px; }
+.kbpd-provenance dd { margin: 4px 0 0; }
+.kbpd-provenance pre { max-height: 280px; overflow: auto; padding: 12px; background: #edf3f0; white-space: pre-wrap; }
+@media (max-width: 700px) {
+  .kbpd-observations { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kbpd-result-columns { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+}

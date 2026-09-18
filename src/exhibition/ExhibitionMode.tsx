@@ -58,9 +58,22 @@ export function ExhibitionMode({
 }: ExhibitionModeProps) {
   const modeRoot = useRef<HTMLDivElement>(null)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const suspendedRef = useRef(suspended)
+  const observerRef = useRef<IntersectionObserver | null>(null)
+  suspendedRef.current = suspended
   const shouldReduceMotion = useReducedMotion()
   const { scrollYProgress } = useScroll()
   const openingDepth = useTransform(scrollYProgress, [0, 0.14], [0, shouldReduceMotion ? 0 : -54])
+
+  const handleEnterClinical = () => {
+    // Prevent the scroll observer from winning the same frame as the mode
+    // transition (notably WebKit, where observer delivery is eager).
+    suspendedRef.current = true
+    observerRef.current?.disconnect()
+    observerRef.current = null
+    if (modeRoot.current) modeRoot.current.inert = true
+    onEnterClinical()
+  }
 
   const jumpTo = (chapter: ChapterId, explicit = true) => {
     const target = document.getElementById(chapter)
@@ -72,27 +85,32 @@ export function ExhibitionMode({
   }
 
   useEffect(() => {
+    if (suspended) return
     const sections = chapters
       .map((chapter) => document.getElementById(chapter.id))
       .filter((section): section is HTMLElement => Boolean(section))
     if (!sections.length || typeof IntersectionObserver === 'undefined') return
 
     const observer = new IntersectionObserver((entries) => {
+      if (suspendedRef.current || modeRoot.current?.inert) return
       const visible = entries
         .filter((entry) => entry.isIntersecting)
         .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0]
       const id = visible?.target.id as ChapterId | undefined
       if (!id) return
       onActiveChapter(id)
-      window.history.replaceState(null, '', `#${id}`)
     }, {
       rootMargin: '-34% 0px -48% 0px',
       threshold: [0, 0.2, 0.5, 0.8]
     })
 
+    observerRef.current = observer
     sections.forEach((section) => observer.observe(section))
-    return () => observer.disconnect()
-  }, [onActiveChapter])
+    return () => {
+      observer.disconnect()
+      if (observerRef.current === observer) observerRef.current = null
+    }
+  }, [onActiveChapter, suspended])
 
   useEffect(() => {
     if (!modeRoot.current) return
@@ -144,7 +162,7 @@ export function ExhibitionMode({
           </button>
           <motion.button
             className="exhibition-mode-action"
-            onClick={onEnterClinical}
+            onClick={handleEnterClinical}
             whileTap={{ scale: 0.98 }}
           >
             完整操作模式
@@ -221,7 +239,7 @@ export function ExhibitionMode({
           <span>{chapters.find((chapter) => chapter.id === activeChapter)?.index}</span>
           <strong>{chapters.find((chapter) => chapter.id === activeChapter)?.nav}</strong>
         </button>
-        <button onClick={onEnterClinical}>完整操作</button>
+        <button onClick={handleEnterClinical}>完整操作</button>
       </nav>
     </motion.div>
   )

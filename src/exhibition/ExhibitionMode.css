@@ -89,6 +89,7 @@
 }
 
 .exhibition-top-nav button {
+  min-width: 44px;
   min-height: 44px;
   padding: 0;
   position: relative;
@@ -1551,6 +1552,9 @@
 
 @media (max-width: 680px) {
   .exhibition-mode {
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: clip;
     padding-bottom: calc(64px + env(safe-area-inset-bottom));
   }
 

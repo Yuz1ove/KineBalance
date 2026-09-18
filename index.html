@@ -5,14 +5,37 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta
       name="description"
-      content="KineBalance：以可信發藥時間錨點與指尖動作量測，支援帕金森氏症居家用藥節律、動作反應長期追蹤與共同複核的概念原型。"
+      content="KineBalance 量測與判讀工作站：保存原始量測、工程指標、背景評估與可追溯分析依據；僅供本機研究與開發者操作。"
     />
-    <meta name="theme-color" content="#0c2533" />
+    <meta name="theme-color" content="#315647" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <title>KineBalance｜用藥節律與動作反應追蹤</title>
+    <title>KineBalance｜讓每一次量測，都有清楚的脈絡</title>
+    <style>
+      [data-static-cover]{background:#f5f3ec;color:#202c26;font:16px/1.8 -apple-system,"PingFang TC",sans-serif;min-height:100vh;margin:0;padding:28px 5%}
+      [data-static-cover] header{padding-bottom:24px;border-bottom:1px solid #d8ded5;font-size:25px;font-weight:600}
+      [data-static-cover] .static-hero{display:grid;grid-template-columns:1.2fr 1fr;gap:6%;align-items:center;padding:70px 0}
+      [data-static-cover] h1{font:500 clamp(34px,4.2vw,62px)/1.45 "Songti TC",serif;letter-spacing:-.055em;margin:22px 0}
+      [data-static-cover] h1 span{color:#315647}[data-static-cover] p{color:#667069;max-width:480px}[data-static-cover] small{font-size:12px;color:#667069}
+      [data-static-cover] figure{margin:0;padding:24px;background:#e7ebde;border:1px solid #d4ddcb;border-radius:5px}
+      [data-static-cover] svg{display:block;width:100%;height:auto}[data-static-cover] figcaption{font-size:12px;color:#667069}
+      [data-static-cover] .static-steps{border-top:1px solid #d8ded5;padding:32px 0;display:grid;grid-template-columns:repeat(3,1fr);gap:30px}
+      [data-static-cover] h2{font-size:20px;font-weight:500}[data-static-cover] a{color:#315647;text-underline-offset:4px}
+      @media(max-width:700px){[data-static-cover]{padding:24px}[data-static-cover] .static-hero{display:block;padding:35px 0}[data-static-cover] figure{margin-top:30px}[data-static-cover] .static-steps{grid-template-columns:1fr;gap:14px}}
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- First-paint / script-failure fallback. React replaces this subtree once ready. -->
+    <div id="root"><main data-static-cover>
+      <header>KineBalance</header>
+      <section class="static-hero"><div><small>帕金森動作量測與研究輔助工具</small>
+        <h1>讓每一次量測，<br><span>都有清楚的脈絡。</span></h1>
+        <p>整理動作量測、背景自述與歷次紀錄。看見資料的變化，也看清每項數值的計算方式與限制。</p>
+        <p><a href="#static-workflow">了解使用流程 ↓</a></p>
+        <small>工作台操作需要 JavaScript。完成載入或啟用後，即可進入互動介面。</small>
+      </div><figure><svg viewBox="0 0 520 320" role="img" aria-label="動作與時間的靜態概念構圖，非患者資料"><g fill="none" stroke="#8ea58d"><path d="M 38 244 C 100 235 125 52 242 65 S 339 287 471 113"/><path d="M 54 244 C 110 207 133 66 242 83 S 351 279 463 139"/><path d="M 70 244 C 120 179 141 80 242 101 S 363 271 455 165"/><path d="M 86 244 C 130 151 149 94 242 119 S 375 263 447 191"/></g><path d="M 50 244 C 107 217 136 56 242 83 S 369 275 463 139" fill="none" stroke="#315647" stroke-width="2.5"/><g fill="#315647"><circle cx="50" cy="244" r="5"/><circle cx="242" cy="83" r="6"/><circle cx="463" cy="139" r="5"/></g></svg><figcaption>動作・節律・時間｜介面示意，非即時量測</figcaption></figure></section>
+      <section id="static-workflow" class="static-steps"><div><small>01 / RECORD</small><h2>從紀錄開始</h2><p>保留左右交替量測、時間、輸入條件與背景自述。</p></div><div><small>02 / COMPARE</small><h2>把變化放在一起看</h2><p>將歷次觀測放回時間軸，查看數值與可比較條件。</p></div><div><small>03 / UNDERSTAND</small><h2>每個結果，都能查看依據</h2><p>展開輸入、品質與計算。正式量表與醫療研究判讀尚未開放。</p></div></section>
+      <noscript><p>JavaScript 目前已關閉。此頁為完整靜態介紹；啟用後重新整理即可操作工作台。已保存的資料不受影響。</p></noscript>
+    </main></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

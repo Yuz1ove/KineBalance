@@ -1,0 +1,27 @@
+import { useState } from 'react'
+import type { WorkspaceRun, ContextRecord } from './contracts'
+import { labels, units, qualityLabels } from './contracts'
+import { Details, Panel, Badge, num, date } from './ui'
+import { EventChart } from './MetricsChart'
+export function MetricStrip({run}:{run:WorkspaceRun}) {return <div className="w-metric-strip">{(Object.keys(labels) as (keyof typeof labels)[]).map(k=><div key={k}><span>{labels[k]}</span><strong>{num(run.analysis.observations[k].value)} <small>{units[run.analysis.observations[k].unit]}</small></strong><small>{run.analysis.observations[k].value===null?'樣本不足':`有效事件 n = ${run.analysis.dataQuality.validEventIds.length}`}</small></div>)}</div>}
+export function AnalysisTrace({run,latest,onReanalyze,busy}:{run:WorkspaceRun;latest?:ContextRecord;onReanalyze:()=>void;busy:boolean}) {
+ const a=run.analysis,stale=(latest?.id??null)!==(run.context?.id??null)
+ return <><div className="w-run-heading"><div><span className="w-eyebrow">INTERPRETATION / {date(a.session.startedAt)}</span><h1>本次量測，如何得到這些數值</h1><p>量測事實、計算方法與研究限制，逐層可查。</p></div><Badge tone={stale?'warn':'good'}>{stale?'背景已更正 · 此分析基於舊版本':'已保存的分析紀錄'}</Badge></div>
+ {stale&&<div className="w-notice"><p>目前背景為 v{latest?.revision}，這份結果使用 {run.context?`v${run.context.revision}`:'未填背景'}。重新分析會建立新紀錄，保留這份歷史。</p><button onClick={onReanalyze} disabled={busy}>以目前背景重新分析</button></div>}
+ <MetricStrip run={run}/><div className="w-analysis-grid"><div><Panel title="觀測結果" kicker="01 / MEASUREMENT"><EventChart run={run}/><div className="w-observation"><h3>{qualityLabels[a.dataQuality.status]}</h3><p>記錄 {a.session.rawEvents.length} 次輸入，其中 {a.dataQuality.validEventIds.length} 次符合原交替事件規則。有效量測時間 {num(a.session.elapsedMs/1000)} 秒。</p><p>這些數值描述操作表現，無法直接推定疾病程度、ON／OFF 或藥效。</p></div></Panel>
+ <Panel title="針對本次評估提問" kicker="CONTEXT-BOUND ASSISTANCE"><Questions run={run}/></Panel></div>
+ <details className="w-panel w-evidence-drawer" open><summary>結果與判讀依據</summary><div><Panel title="分析依據紀錄" kicker="TRACE / 6 LAYERS" className="w-trace">
+ <Details title="01　本次使用的資料"><p>來源：量測服務 → KBPD 應用層</p><dl><dt>量測 ID</dt><dd>{a.sessionId}</dd><dt>輸入 SHA-256</dt><dd>{a.inputHash}</dd><dt>背景版本</dt><dd>{run.context?`${run.context.id} · v${run.context.revision}`:'未填寫'}</dd><dt>使用欄位</dt><dd>原始事件、時間、操作側、輸入方式、裝置、protocol、完成狀態。</dd><dt>缺少資料</dt><dd>正式量表、專業覆核、合格醫療檢索。</dd></dl></Details>
+ <Details title={`02　資料品質 · ${qualityLabels[a.dataQuality.status]}`}><p>規則：{a.versions.algorithm} · 有效事件 {a.dataQuality.validEventIds.length} 筆</p><ul>{a.dataQuality.issues.length?a.dataQuality.issues.map(x=><li key={x}>{x}</li>):<li>本次沒有偵測到規則內的品質問題；不代表臨床有效。</li>}</ul><p>排除事件：{a.dataQuality.cleaningLog.join('；')||'無'}。完成狀態：{a.session.status}。</p></Details>
+ <Details title="03　確定性計算 · 原生公式"><p>KBPD 應用層 · {a.versions.algorithm}</p>{(Object.keys(labels) as (keyof typeof labels)[]).map(k=><div className="w-formula" key={k}><strong>{labels[k]}：{num(a.observations[k].value)} {units[a.observations[k].unit]}</strong><p>{a.observations[k].formula}</p><small>最低事件數 {a.observations[k].minimumEvents}；{a.observations[k].reasonCode??'可計算'}</small></div>)}<p>既有參考集需要至少 {a.referenceSet.minimumSessions} 次相容先前量測；本次納入 {a.referenceSet.includedSessionIds.length} 次。{a.comparison.reasonCodes.join('；')}</p><Details title="基準紀錄與排除清單"><p>{a.referenceSet.includedSessionIds.join('、')||'沒有已納入基準'}</p><pre>{JSON.stringify(a.referenceSet.excludedSessions,null,2)}</pre></Details></Details>
+ <Details title="04　ARCI 原生回執與能力範圍"><Badge tone="good">有界讀取 {a.arci.status}</Badge><p>封版 revision：{run.core.revision}</p><p>核心 digest：{run.core.digest}</p><p>原生入口：{a.arci.status==='SUCCEEDED'?a.arci.receipt.entry:'無可用回執'}</p><p>ARCI 本次實際讀入的原始 JSON，已交給 KBPD 計算。沒有 ARCI 醫療推論、中間思考節點或模型生成。</p>{a.arci.status==='SUCCEEDED'&&<dl><dt>原生呼叫 ID</dt><dd>{a.arci.receipt.callId}</dd><dt>回執時間</dt><dd>{a.arci.receipt.calledAt}</dd><dt>讀入 bytes</dt><dd>{a.arci.receipt.output?.byteLength}</dd><dt>原生讀入 hash</dt><dd>{a.arci.receipt.output?.sha256}</dd></dl>}</Details>
+ <Details title="05　研究證據 · 本次未使用來源"><Badge tone="warn">UNQUALIFIED</Badge><p>本次引用 0 筆來源。現有 corpus 的來源盤點可在管理後台查看，但尚未取得本次可採納的檢索結果。</p><p>來源已保存不等於支持個案結論；此頁不生成研究名稱、引用或研究性醫療判讀。</p></Details>
+ <Details title="06　結論、限制與待補資訊"><p>事實：有效敲擊 {num(a.observations.validEventCount.value)} 次；速率 {num(a.observations.rate.value)} 次／秒。</p><p>有限解讀：只能在相同資料來源、方法、装置、輸入方式與品質條件下描述差異。</p><ul><li>不作診斷、處方、疾病分期、藥效或個人病情預測。</li><li>需補正式合法評估紀錄與適用研究證據。</li><li>人工／專業覆核：尚未完成。</li></ul></Details>
+ <Details title="開發者結構化紀錄"><pre>{JSON.stringify({id:run.id,inputHash:a.inputHash,versions:a.versions,quality:a.dataQuality,arci:a.arci,core:run.core,contextId:run.context?.id??null,evidenceUsed:[],review:run.review},null,2)}</pre></Details>
+ </Panel></div></details></div></>
+}
+function Questions({run}:{run:WorkspaceRun}) {
+ const [question,setQuestion]=useState<string|null>(null)
+ const options=['哪些資料不足，所以不能判斷？','這項敘述引用哪個來源？','哪些是量測事實？']
+ return <><p>本機確定性說明 · 綁定本次分析與背景版本。醫療模型問答尚未開放。</p><div className="w-question-list">{options.map(q=><button key={q} onClick={()=>setQuestion(q)}>{q}</button>)}</div>{question&&<div className="w-answer" role="status"><strong>{question}</strong><p>{question===options[0]?`本次背景${run.context?'已填，但未專業確認':'未填'}；沒有正式量表、合格醫療檢索與人工覆核，因此不能推斷疾病、藥效或 ON／OFF。`:question===options[1]?'本次沒有引用研究來源。數值來自原始量測事件與已列出的計算公式。':`原始事件 ${run.analysis.session.rawEvents.length} 筆；有效敲擊 ${num(run.analysis.observations.validEventCount.value)} 次、速率 ${num(run.analysis.observations.rate.value)} 次／秒。這些是工程觀測，不能換算為正式臨床評分。`}</p></div>}</>
+}

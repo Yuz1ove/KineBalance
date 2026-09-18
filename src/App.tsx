@@ -61,6 +61,7 @@ function App() {
   const [researchOpen, setResearchOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [clinicalOpen, setClinicalOpen] = useState(initialRoute.mode === 'clinical')
+  const modeRef = useRef<ExperienceMode>(initialRoute.mode)
   const clinicalTriggerRef = useRef<HTMLElement | null>(null)
   const shouldReduceMotion = useReducedMotion()
 
@@ -72,13 +73,15 @@ function App() {
     setActiveChapter(chapterForScene(scene.id))
     setMobileNavOpen(false)
     if (options.open !== false) setClinicalOpen(true)
-    if (options.updateHash !== false && mode === 'clinical') {
+    if (options.updateHash !== false && modeRef.current === 'clinical') {
+      window.history.pushState(null, '', `#clinical/${scene.id}`)
+    } else if (options.updateHash !== false && options.open !== false) {
       window.history.pushState(null, '', `#clinical/${scene.id}`)
     }
-    if (mode === 'clinical') {
+    if (modeRef.current === 'clinical') {
       window.scrollTo({ top: 0, behavior: shouldReduceMotion ? 'auto' : 'smooth' })
     }
-  }, [mode, shouldReduceMotion])
+  }, [shouldReduceMotion])
 
   const openScene = useCallback((scene: SceneId) => {
     clinicalTriggerRef.current = document.activeElement instanceof HTMLElement
@@ -91,28 +94,53 @@ function App() {
   const previous = useCallback(() => selectScene(Math.max(current - 1, 0)), [current, selectScene])
 
   const enterClinical = useCallback(() => {
-    const scene = sceneForChapter(activeChapter)
+    const hashChapter = window.location.hash.replace(/^#/, '')
+    const anchorChapter = typeof document.elementFromPoint === 'function'
+      ? document.elementFromPoint(window.innerWidth / 2, 100)?.closest<HTMLElement>('[id]')?.id
+      : undefined
+    const chapterCandidate = isChapterId(hashChapter)
+      ? hashChapter
+      : isChapterId(anchorChapter ?? '')
+        ? anchorChapter
+        : activeChapter
+    const chapter = (chapterCandidate ?? activeChapter) as ChapterId
+    const scene = sceneForChapter(chapter)
     const sceneIndex = indexForScene(scene)
     setCurrent(sceneIndex)
     setVisited((previous) => new Set([...previous, scene]))
+    modeRef.current = 'clinical'
     setMode('clinical')
     setClinicalOpen(true)
     window.history.pushState(null, '', `#clinical/${scene}`)
-    window.scrollTo({ top: 0, behavior: shouldReduceMotion ? 'auto' : 'smooth' })
-  }, [activeChapter, shouldReduceMotion])
+    const previousScrollBehavior = document.documentElement.style.scrollBehavior
+    document.documentElement.style.scrollBehavior = 'auto'
+    window.scrollTo(0, 0)
+    document.documentElement.style.scrollBehavior = previousScrollBehavior
+    document.documentElement.scrollTop = 0
+    document.body.scrollTop = 0
+  }, [activeChapter])
+
+  useEffect(() => {
+    if (mode !== 'clinical') return
+    const expectedHash = `#clinical/${scenes[current].id}`
+    if (window.location.hash !== expectedHash) {
+      window.history.replaceState(null, '', expectedHash)
+    }
+  }, [current, mode])
 
   const enterExhibition = useCallback(() => {
     const chapter = chapterForScene(scenes[current].id)
+    modeRef.current = 'exhibition'
     setMode('exhibition')
     setClinicalOpen(false)
+    modeRef.current = 'exhibition'
     setActiveChapter(chapter)
     window.history.pushState(null, '', `#${chapter}`)
     window.requestAnimationFrame(() => {
       const section = document.getElementById(chapter)
-      section?.scrollIntoView({
-        behavior: shouldReduceMotion ? 'auto' : 'smooth',
-        block: 'start'
-      })
+      if (section) {
+        window.scrollTo({ top: section.offsetTop, behavior: shouldReduceMotion ? 'auto' : 'smooth' })
+      }
       const heading = section?.querySelector<HTMLElement>('h1, h2')
       heading?.setAttribute('tabindex', '-1')
       heading?.focus({ preventScroll: true })
@@ -140,6 +168,7 @@ function App() {
   useEffect(() => {
     const onPopState = () => {
       const route = routeFromHash()
+      modeRef.current = route.mode
       setMode(route.mode)
       setActiveChapter(route.chapter)
       setCurrent(indexForScene(route.scene))
@@ -159,7 +188,42 @@ function App() {
     }
   }, [clinicalOpen, mode])
 
+  const selectClinicalScene = useCallback((index: number) => {
+    const nextIndex = Math.min(Math.max(index, 0), scenes.length - 1)
+    const scene = scenes[nextIndex]
+    modeRef.current = 'clinical'
+    setMode('clinical')
+    setCurrent(nextIndex)
+    setVisited((previous) => new Set([...previous, scene.id]))
+    setActiveChapter(chapterForScene(scene.id))
+    setClinicalOpen(true)
+    setMobileNavOpen(false)
+    // Keep this transition atomic: no Exhibition observer or generic scene
+    // helper should get a chance to restore the previous Exhibition hash.
+    const clinicalHash = `#clinical/${scene.id}`
+    window.history.pushState(null, '', clinicalHash)
+    const previousScrollBehavior = document.documentElement.style.scrollBehavior
+    document.documentElement.style.scrollBehavior = 'auto'
+    window.scrollTo(0, 0)
+    document.documentElement.style.scrollBehavior = previousScrollBehavior
+    // React commits the mode switch after this handler. Re-assert the route
+    // at the next frame so a queued Exhibition scroll callback cannot win.
+    window.requestAnimationFrame(() => {
+      if (modeRef.current === 'clinical' && window.location.hash !== clinicalHash) {
+        window.history.replaceState(null, '', clinicalHash)
+      }
+    })
+    window.scrollTo({ top: 0, behavior: 'auto' })
+  }, [])
+
+  const exhibitionChapterChange = useCallback((chapter: ChapterId) => {
+    // Once the clinical layer starts its transition, queued intersection
+    // observer deliveries from the exhibition must not rewrite the route.
+    if (modeRef.current === 'exhibition') setActiveChapter(chapter)
+  }, [mode])
+
   const clinicalVisible = mode === 'clinical' || clinicalOpen
+  const clinicalKey = 'clinical-experience'
   const sceneContent = useMemo(() => scenes.map((scene, index) => {
     if (!visited.has(scene.id)) return null
 
@@ -207,23 +271,24 @@ function App() {
             <ExhibitionMode
               key="exhibition"
               activeChapter={activeChapter}
-              onActiveChapter={setActiveChapter}
+              onActiveChapter={exhibitionChapterChange}
               onOpenScene={openScene}
               onOpenResearch={() => setResearchOpen(true)}
               onEnterClinical={enterClinical}
-              suspended={clinicalOpen}
+              suspended={clinicalOpen || modeRef.current === 'clinical'}
             />
           ) : null}
         </AnimatePresence>
 
         <ClinicalExperience
+          key={clinicalKey}
           mode={mode}
           open={mode === 'clinical' || clinicalOpen}
           current={current}
           visited={visited}
           mobileNavOpen={mobileNavOpen}
           onToggleMobileNav={() => setMobileNavOpen((value) => !value)}
-          onSelectScene={selectScene}
+          onSelectScene={selectClinicalScene}
           onOpenResearch={() => setResearchOpen(true)}
           onEnterClinical={enterClinical}
           onEnterExhibition={enterExhibition}
@@ -287,6 +352,13 @@ function ClinicalExperience({
   const clinicalRootRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    if (clinicalRootRef.current) clinicalRootRef.current.inert = !open
+    return () => {
+      if (clinicalRootRef.current) clinicalRootRef.current.inert = true
+    }
+  }, [open])
+
+  useEffect(() => {
     const syncRuntimePolicy = () => {
       const paused = !open || document.visibilityState !== 'visible'
       document.documentElement.dataset.orientationGateActive = String(paused)
@@ -340,10 +412,9 @@ function ClinicalExperience({
       aria-hidden={!open}
       hidden={!open}
       onKeyDown={trapOverlayFocus}
-      layout={!shouldReduceMotion}
       initial={false}
-      animate={{ opacity: open ? 1 : 0, y: open || shouldReduceMotion ? 0 : 18 }}
-      transition={{ duration: shouldReduceMotion ? 0 : 0.42, ease: [0.22, 1, 0.36, 1] }}
+      animate={{ opacity: open ? 1 : 0 }}
+      transition={{ duration: 0 }}
     >
           {overlay ? (
             <button
