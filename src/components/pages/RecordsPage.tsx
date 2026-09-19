@@ -151,6 +151,7 @@ export const RecordsPage: React.FC<RecordsPageProps> = ({
                       transition={{ duration: 0.35, delay: index * 0.04 }}
                       whileHover={shouldReduceMotion ? undefined : { y: -2 }}
                     >
+                      <p>資料來源：{quality?.acquisition?.source??'UNKNOWN'}</p>
                       {/* Header Row */}
                       <div
                         style={{
@@ -284,6 +285,11 @@ export const RecordsPage: React.FC<RecordsPageProps> = ({
                             borderTop: '1px solid var(--kb-divider)',
                           }}
                         >
+                          <details><summary>來源、品質與量測資料</summary>
+                            <p>{analysis?.algorithmVersion??'UNKNOWN'} · session {analysis?.sessionId??'UNKNOWN'} · {analysis?.calculatedAt??'UNKNOWN'}</p>
+                            <p>原始影格 {quality?.acquisition?.rawFrames.length??'UNKNOWN'} · 完整事件 {quality?.acquisition?.events.length??'UNKNOWN'} · 有效比例 {quality?.effectiveTrackingRatio??'UNKNOWN'} · 時間缺口 {quality?.timeGapsCount??'UNKNOWN'} · 失追 {quality?.trackingLostCount??'UNKNOWN'}</p>
+                            <p>事件時間 ms：{quality?.acquisition?.events.map(e=>e.endMs).join(', ')??'UNKNOWN'}</p>
+                          </details>
                           {metrics ? (
                             <div
                               style={{

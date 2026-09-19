@@ -1,0 +1,14 @@
+{
+  "name": "kbpd-core",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "KBPD Independent Measurement Core, Storage API, and ARCI Bridge",
+  "scripts": {
+    "start": "node --experimental-strip-types src/index.ts",
+    "cli": "node --experimental-strip-types src/measurement/cli.ts",
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@mediapipe/hands": "^0.4.1675469240"
+  }
+}

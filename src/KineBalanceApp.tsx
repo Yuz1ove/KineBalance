@@ -111,6 +111,7 @@ export const KineBalanceApp: React.FC = () => {
       hasIdentity={!!token}
       isDemo={isDemo}
     >
+      {import.meta.env.VITE_HOSTED_PREVIEW==='true' && <div className="kb-alert" role="status">線上預覽：相機與影片在瀏覽器本機分析，不上傳影像。此版本不提供帳號或紀錄保存；完整保存／讀回請使用本機版。真人精度尚未驗證。</div>}
       {currentTab === 'home' && (
         <HomePage
           latestRecord={latestRecord}

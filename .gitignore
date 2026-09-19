@@ -14,3 +14,17 @@ vite.config.d.ts
 
 output/playwright/
 .playwright-cli/
+
+# Private runtime data and generated release assets
+**/.data/
+**/*.db
+**/*.db-*
+**/*.sqlite*
+logs/
+public/vendor/
+public/fixtures/
+kbpd-core/public/
+evidence/*.json
+*.log
+.vercel
+.env*
