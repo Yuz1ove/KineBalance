@@ -24,7 +24,7 @@ const startService=async name=>{
   catch(error){if(attempt===29)throw error;await new Promise(r=>setTimeout(r,500))}
  }
 }
-const waitHealthy=async()=>{for(let i=0;i<30;i++){try{const r=await context.request.get(apiBase+'/api/health',{timeout:3000});if(r.ok()&&(await r.json()).algorithmVersion==='KBPD-DETECTOR-V1.2.0')return}catch{}await new Promise(r=>setTimeout(r,1000))}throw Error('HTTPS API did not recover')}
+const waitHealthy=async()=>{for(let i=0;i<30;i++){try{const r=await context.request.get(apiBase+'/api/health',{timeout:3000,headers:{'ngrok-skip-browser-warning':'1'}});if(r.ok()&&(await r.json()).algorithmVersion==='KBPD-DETECTOR-V1.2.0')return}catch{}await new Promise(r=>setTimeout(r,1000))}throw Error('HTTPS API did not recover')}
 if(restartServices)assert.equal(apiBase,'https://sternum-relative-handclasp.ngrok-free.dev','Restart test restricted to dedicated KineBalance endpoint')
 // Label the authorized acceptance session without altering frames or analytical values.
 if(process.env.TEST_IDENTITY)await page.route('**/api/measurements',async route=>{
@@ -40,7 +40,7 @@ page.on('response',r=>network.push({url:r.url(),status:r.status()}))
 page.on('requestfailed',r=>network.push({url:r.url(),failure:r.failure()}))
 try{
   if(backend){
-    const health=await context.request.get((apiBase||base)+'/api/health')
+    const health=await context.request.get((apiBase||base)+'/api/health',{headers:{'ngrok-skip-browser-warning':'1'}})
     assert.equal(health.status(),200,'Original backend must be reachable before identity creation')
     assert.equal((await health.json()).algorithmVersion,'KBPD-DETECTOR-V1.2.0','Do not save against the old V1.0 backend')
     console.log('Opening settings');await page.goto(base+'/#settings')
@@ -80,7 +80,7 @@ try{
   const failedId=submitted.sessionId
   const read=async(target=page,id)=>target.evaluate(async({apiBase,id})=>{
     const token=localStorage.getItem('kbpd_user_token'),userId=localStorage.getItem('kbpd_user_id')
-    const headers={Authorization:`Bearer ${token}`}
+    const headers={Authorization:`Bearer ${token}`,'ngrok-skip-browser-warning':'1'}
     const listResponse=await fetch(apiBase+'/api/me/measurements',{headers})
     if(!listResponse.ok)throw Error('backend list failed')
     const list=await listResponse.json()
@@ -132,12 +132,12 @@ try{
   await second.screenshot({path:output+'/records-reload.png',fullPage:true})
   const anonymous=await browser.newContext(), outsider=await anonymous.newPage()
   await outsider.goto(base+'/#settings')
-  const noAuth=await anonymous.request.get((apiBase||base)+'/api/me/measurements/'+id)
+  const noAuth=await anonymous.request.get((apiBase||base)+'/api/me/measurements/'+id,{headers:{'ngrok-skip-browser-warning':'1'}})
   assert.equal(noAuth.status(),401)
   await outsider.getByRole('button',{name:'建立我的紀錄'}).click()
   await outsider.getByText('身分已成功確認並加載最新紀錄！').waitFor()
   const isolation=await outsider.evaluate(async({apiBase,id})=>{
-    const headers={Authorization:`Bearer ${localStorage.getItem('kbpd_user_token')}`}
+    const headers={Authorization:`Bearer ${localStorage.getItem('kbpd_user_token')}`,'ngrok-skip-browser-warning':'1'}
     const list=await fetch(apiBase+'/api/me/measurements',{headers}).then(r=>r.json())
     const response=await fetch(apiBase+'/api/me/measurements/'+id,{headers})
     return {userId:localStorage.getItem('kbpd_user_id'),list,status:response.status,body:await response.json()}
@@ -147,9 +147,9 @@ try{
   assert.equal(isolation.status,400);assert.equal(isolation.body.error.code,'SESSION_NOT_FOUND')
   await anonymous.close()
   if(restartServices){
-    const beforeHealth=await context.request.get(apiBase+'/api/health').then(r=>r.json())
+    const beforeHealth=await context.request.get(apiBase+'/api/health',{headers:{'ngrok-skip-browser-warning':'1'}}).then(r=>r.json())
     for(const name of ['backend','tunnel']){stopService(name);await startService(name);await waitHealthy()}
-    const afterHealth=await context.request.get(apiBase+'/api/health').then(r=>r.json())
+    const afterHealth=await context.request.get(apiBase+'/api/health',{headers:{'ngrok-skip-browser-warning':'1'}}).then(r=>r.json())
     assert.equal(afterHealth.sourceSha256,beforeHealth.sourceSha256)
     assert.deepEqual((await read(second,id)).record,record,'same unexpired Bearer session must survive backend and tunnel restarts')
     writeFileSync(output+'/service-restart.json',JSON.stringify({apiBase,backendRestart:'PASS',tunnelRestart:'PASS',sameUrl:true,sameUnexpiredAuthentication:true,exactRecordReadback:true,offlineSave:'NO_SUCCESS_SAME_SESSION_RETRY',beforeHealth,afterHealth},null,2))

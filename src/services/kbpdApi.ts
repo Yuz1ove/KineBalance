@@ -261,6 +261,8 @@ class KbpdApiService {
     }
 
     const apiBase=(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/,'')
+    // ngrok's documented API marker avoids its HTML landing page; not an auth secret.
+    if (apiBase && new URL(apiBase).hostname.endsWith('.ngrok-free.dev')) headers['ngrok-skip-browser-warning'] = '1'
     const res = await fetch(apiBase+path, {
       ...options,
       headers,

@@ -64,7 +64,7 @@ export function createApiServer(options: ServerOptions) {
     }
     if (origin) res.setHeader('Access-Control-Allow-Origin', origin)
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
-    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-File-Name')
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-File-Name, ngrok-skip-browser-warning')
 
     if (req.method === 'OPTIONS') {
       res.writeHead(204)
