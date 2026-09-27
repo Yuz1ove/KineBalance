@@ -18,7 +18,12 @@ const restartServices=process.env.VERIFY_MAC_SERVICES==='1'
 const domain=`gui/${process.getuid()}`
 const service=name=>`space.yuz1ove.kinebalance.${name}`
 const stopService=name=>execFileSync('/bin/launchctl',['bootout',`${domain}/${service(name)}`])
-const startService=name=>execFileSync('/bin/launchctl',['bootstrap',domain,`${process.env.HOME}/Library/LaunchAgents/${service(name)}.plist`])
+const startService=async name=>{
+ for(let attempt=0;attempt<30;attempt++){
+  try{return execFileSync('/bin/launchctl',['bootstrap',domain,`${process.env.HOME}/Library/LaunchAgents/${service(name)}.plist`],{stdio:'pipe'})}
+  catch(error){if(attempt===29)throw error;await new Promise(r=>setTimeout(r,500))}
+ }
+}
 const waitHealthy=async()=>{for(let i=0;i<30;i++){try{const r=await context.request.get(apiBase+'/api/health',{timeout:3000});if(r.ok()&&(await r.json()).algorithmVersion==='KBPD-DETECTOR-V1.2.0')return}catch{}await new Promise(r=>setTimeout(r,1000))}throw Error('HTTPS API did not recover')}
 if(restartServices)assert.equal(apiBase,'https://sternum-relative-handclasp.ngrok-free.dev','Restart test restricted to dedicated KineBalance endpoint')
 // Label the authorized acceptance session without altering frames or analytical values.
@@ -97,7 +102,7 @@ try{
       assert.equal(await page.getByText('本次紀錄已成功保存！',{exact:true}).count(),0)
       assert.equal(submitted.sessionId,failedId)
       await page.screenshot({path:output+'/backend-offline.png',fullPage:true})
-    }finally{startService('backend');await waitHealthy()}
+    }finally{await startService('backend');await waitHealthy()}
   }
   const savedResponse=page.waitForResponse(r=>/\/api\/measurements\/[^/]+\/analyze$/.test(r.url())&&r.ok())
   await page.getByRole('button',{name:'保存這次紀錄'}).click()
@@ -143,7 +148,7 @@ try{
   await anonymous.close()
   if(restartServices){
     const beforeHealth=await context.request.get(apiBase+'/api/health').then(r=>r.json())
-    for(const name of ['backend','tunnel']){stopService(name);startService(name);await waitHealthy()}
+    for(const name of ['backend','tunnel']){stopService(name);await startService(name);await waitHealthy()}
     const afterHealth=await context.request.get(apiBase+'/api/health').then(r=>r.json())
     assert.equal(afterHealth.sourceSha256,beforeHealth.sourceSha256)
     assert.deepEqual((await read(second,id)).record,record,'same unexpired Bearer session must survive backend and tunnel restarts')

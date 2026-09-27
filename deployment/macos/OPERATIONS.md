@@ -41,3 +41,11 @@ The first command alone stops; the second alone starts. Do not stop the system C
 A full local backup is in `output/mac-hosted-20260927/original-data-backup` at workspace root. Backend writing was paused; SQLite backup API plus a write lock protected the DB and companion-file snapshot. This is not uploaded to Vercel. Current evidence and final deployment identity are in the sibling `FINAL-REPORT.md` and JSON receipts under that evidence directory.
 
 After a new preview URL is known, add only that exact origin to `backend.json`'s `KBPD_ALLOWED_ORIGINS`, then restart the backend. Build-level `VITE_API_BASE_URL` is public configuration only. Production promotion and production origin admission require separate approval.
+
+launchd unload is asynchronous. For a restart in one command, the installed source provides a bounded retry helper (15 seconds maximum), scoped to these two service names:
+
+```sh
+/Users/Yuz1ove/.hermes/node/bin/node '/Users/Yuz1ove/Documents/ChatGPT/ARCI 醫/releases/kinebalance-production-repair-20260927/deployment/macos/control.mjs' restart backend
+```
+
+Replace `restart` with `status`, `stop`, or `start`; replace `backend` with `tunnel` for the tunnel. A bootstrap error 5 immediately after bootout can mean the previous job is still unloading; do not retry as root.
