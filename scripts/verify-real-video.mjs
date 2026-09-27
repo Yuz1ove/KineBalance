@@ -15,7 +15,7 @@ page.on('pageerror',e=>logs.push({type:'pageerror',text:e.message}))
 page.on('response',r=>network.push({url:r.url(),status:r.status()}))
 page.on('requestfailed',r=>network.push({url:r.url(),failure:r.failure()}))
 try{
-  if(process.env.ANALYSIS_ONLY!=='1'){
+  if(process.env.VERIFY_BACKEND==='1'){
     console.log('Opening settings');await page.goto(base+'/#settings')
     await page.getByRole('button',{name:'建立我的紀錄'}).click()
     await page.getByText('身分已成功確認並加載最新紀錄！').waitFor()
@@ -35,23 +35,29 @@ try{
   writeFileSync(output+'/result.txt',text)
   await page.screenshot({path:output+'/result.png',fullPage:true})
   assert.equal(await page.getByRole('button',{name:'保存這次紀錄'}).isEnabled(),true,'real video should contain valid hand frames')
-  if(process.env.ANALYSIS_ONLY==='1'){
+  if(process.env.VERIFY_BACKEND!=='1'){
     writeFileSync(output+'/receipt.json',JSON.stringify({base,engine:process.env.ENGINE??'chromium',mobileEmulation:process.env.MOBILE==='1',elapsedMs:Date.now()-started,evidenceClass:process.env.CAMERA_TEST==='1'?'VIRTUAL_CAMERA_REPLAY_NOT_PHYSICAL_CAMERA':'REAL_VIDEO_DECODE_AND_ANALYSIS',storageReadback:'NOT_RUN_EXISTING_BACKEND_REQUIRED',physicalCamera:'NOT_RUN',text},null,2))
     console.log('Real-image analysis complete; existing backend save/readback NOT_RUN')
   }else{
   await page.getByRole('button',{name:'保存這次紀錄'}).click()
-  await page.getByText('本次紀錄已保存在此瀏覽器！',{exact:true}).waitFor()
-  const read=()=>page.evaluate(()=>new Promise((resolve,reject)=>{
-    const r=indexedDB.open('kinebalance-browser-measurements-v1');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result,tx=db.transaction('state'),q=tx.objectStore('state').get('root');q.onsuccess=()=>resolve(q.result);tx.oncomplete=()=>db.close()}
-  }))
-  const before=await read(), record=Object.values(before.records).find(r=>r.measurementOutput)
+  await page.getByText('本次紀錄已成功保存至本機資料庫！',{exact:true}).waitFor()
+  const read=()=>page.evaluate(async(apiBase)=>{
+    const token=localStorage.getItem('kbpd_user_token')
+    const headers={Authorization:`Bearer ${token}`}
+    const list=await fetch(apiBase+'/api/me/measurements',{headers}).then(async r=>{if(!r.ok)throw Error('backend list failed');return r.json()})
+    const item=list.items[0];if(!item)throw Error('saved record absent')
+    const response=await fetch(apiBase+'/api/me/measurements/'+(item.id||item.session.id),{headers})
+    if(!response.ok)throw Error('backend read failed')
+    return response.json()
+  },process.env.API_BASE??'')
+  const before=await read(), record={...before,input:before.rawInput}
   assert.equal(record.input.source,process.env.CAMERA_TEST==='1'?'CAMERA':'REAL_VIDEO')
   assert.ok(record.input.frames.length>100)
   assert.ok(record.measurementOutput.quality.validFrames>0)
   await page.goto(base+'/#records');await page.reload()
   await page.getByRole('heading',{name:'紀錄與趨勢',exact:true}).waitFor()
   const after=await read();assert.deepEqual(after,before)
-  // Fresh page in the same device storage reads the native saved raw frames and result.
+  // A new page uses the original API identity and persisted backend record.
   const second=await context.newPage();await second.goto(base+'/#records')
   await second.getByRole('heading',{name:'紀錄與趨勢',exact:true}).waitFor()
   await second.screenshot({path:output+'/records-reload.png',fullPage:true})
