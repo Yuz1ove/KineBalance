@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import { createHash } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import { analyzeFingerTapping } from '../kbpd-core/src/measurement/detector.ts'
 const base=process.env.BASE_URL??'http://127.0.0.1:4510'
 const output=process.env.EVIDENCE_DIR??'../../output/production-repair-20260927/local-chromium'
@@ -13,6 +14,18 @@ const context=await browser.newContext(process.env.MOBILE==='1'?{...devices['iPh
 const page=await context.newPage(), logs=[], network=[]
 const backend=process.env.VERIFY_BACKEND==='1', apiBase=process.env.API_BASE??''
 let submitted, savedOutput, deniedSave=false
+const restartServices=process.env.VERIFY_MAC_SERVICES==='1'
+const domain=`gui/${process.getuid()}`
+const service=name=>`space.yuz1ove.kinebalance.${name}`
+const stopService=name=>execFileSync('/bin/launchctl',['bootout',`${domain}/${service(name)}`])
+const startService=name=>execFileSync('/bin/launchctl',['bootstrap',domain,`${process.env.HOME}/Library/LaunchAgents/${service(name)}.plist`])
+const waitHealthy=async()=>{for(let i=0;i<30;i++){try{const r=await context.request.get(apiBase+'/api/health',{timeout:3000});if(r.ok()&&(await r.json()).algorithmVersion==='KBPD-DETECTOR-V1.2.0')return}catch{}await new Promise(r=>setTimeout(r,1000))}throw Error('HTTPS API did not recover')}
+if(restartServices)assert.equal(apiBase,'https://sternum-relative-handclasp.ngrok-free.dev','Restart test restricted to dedicated KineBalance endpoint')
+// Label the authorized acceptance session without altering frames or analytical values.
+if(process.env.TEST_IDENTITY)await page.route('**/api/measurements',async route=>{
+ if(route.request().method()!=='POST')return route.continue()
+ await route.continue({postData:JSON.stringify({...route.request().postDataJSON(),testIdentity:process.env.TEST_IDENTITY,notes:'Authorized HTTPS preview acceptance; retain this test record.'})})
+})
 page.on('request',r=>{if(r.method()==='POST' && /\/api\/measurements\/[^/]+\/analyze$/.test(r.url())) submitted=r.postDataJSON()})
 page.on('response',async r=>{if(r.ok() && /\/api\/measurements\/[^/]+\/analyze$/.test(r.url())) savedOutput=await r.json()})
 page.setDefaultTimeout(20000)
@@ -76,6 +89,16 @@ try{
   assert.equal(failed.record.measurementOutput,null,'rejected save must not write an analysis')
   assert.ok(!failed.record.rawInput,'rejected save must not manufacture frames')
   await page.unroute('**/api/measurements/*/analyze')
+  if(restartServices){
+    stopService('backend')
+    try{
+      await page.getByRole('button',{name:'保存這次紀錄'}).click()
+      await page.getByText(/尚未保存.*紀錄服務暫時無法/).waitFor()
+      assert.equal(await page.getByText('本次紀錄已成功保存！',{exact:true}).count(),0)
+      assert.equal(submitted.sessionId,failedId)
+      await page.screenshot({path:output+'/backend-offline.png',fullPage:true})
+    }finally{startService('backend');await waitHealthy()}
+  }
   const savedResponse=page.waitForResponse(r=>/\/api\/measurements\/[^/]+\/analyze$/.test(r.url())&&r.ok())
   await page.getByRole('button',{name:'保存這次紀錄'}).click()
   savedOutput=await (await savedResponse).json()
@@ -118,6 +141,14 @@ try{
   assert.equal(isolation.list.total,0)
   assert.equal(isolation.status,400);assert.equal(isolation.body.error.code,'SESSION_NOT_FOUND')
   await anonymous.close()
+  if(restartServices){
+    const beforeHealth=await context.request.get(apiBase+'/api/health').then(r=>r.json())
+    for(const name of ['backend','tunnel']){stopService(name);startService(name);await waitHealthy()}
+    const afterHealth=await context.request.get(apiBase+'/api/health').then(r=>r.json())
+    assert.equal(afterHealth.sourceSha256,beforeHealth.sourceSha256)
+    assert.deepEqual((await read(second,id)).record,record,'same unexpired Bearer session must survive backend and tunnel restarts')
+    writeFileSync(output+'/service-restart.json',JSON.stringify({apiBase,backendRestart:'PASS',tunnelRestart:'PASS',sameUrl:true,sameUnexpiredAuthentication:true,exactRecordReadback:true,offlineSave:'NO_SUCCESS_SAME_SESSION_RETRY',beforeHealth,afterHealth},null,2))
+  }
   writeFileSync(output+'/saved-record.json',JSON.stringify(record,null,2))
   const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex')
   writeFileSync(output+'/receipt.json',JSON.stringify({base,apiBase,engine:process.env.ENGINE??'chromium',mobileEmulation:process.env.MOBILE==='1',elapsedMs:Date.now()-started,recordId:id,frames:record.rawInput.frames.length,validFrames:record.measurementOutput.quality.validFrames,algorithmVersion:savedOutput.algorithmVersion,rawSha256:digest(record.rawInput),outputSha256:digest(record.measurementOutput),metrics:record.measurementOutput.metrics,storageReadback:'EXACT_MATCH_UI_POST_AND_BACKEND_RESPONSE',reload:'EXACT_MATCH',newPage:'EXACT_MATCH_FROM_NEW_PAGE',rejectedSave:'REAL_BACKEND_401_NO_ANALYSIS_NO_SUCCESS',identityIsolation:'ANONYMOUS_401_OTHER_OWNER_DENIED',physicalCamera:'NOT_RUN',evidenceClass:process.env.CAMERA_TEST==='1'?'VIRTUAL_CAMERA_REPLAY_NOT_PHYSICAL_CAMERA':'REAL_VIDEO_ORIGINAL_BACKEND'},null,2))

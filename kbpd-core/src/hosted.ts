@@ -52,11 +52,13 @@ const api = createApiServer({ port, store, identityManager,
 const server = createServer((req, res) => {
   const pathname = new URL(req.url || '/', 'http://localhost').pathname
   // Deploy only the original API; static/test/vendor handlers are not public backend routes.
-  if (!pathname.startsWith('/api/') || pathname.startsWith('/api/fixtures/')) {
+  if (!pathname.startsWith('/api/') || pathname.startsWith('/api/fixtures/') || pathname === '/api/auth/demo') {
     res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: { code: 'NOT_FOUND' } })); return
   }
   api.emit('request', req, res)
 })
+server.requestTimeout = 30_000
+server.headersTimeout = 15_000
 server.listen(port, process.env.KBPD_BIND_HOST || '127.0.0.1', () => console.log(JSON.stringify({
   service: 'kbpd-core-original-storage', port, algorithmVersion: ALGORITHM_VERSION, sourceSha256,
   dataBinding: 'EXISTING_DATABASE', allowedOrigins: origins,

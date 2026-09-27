@@ -29,8 +29,12 @@ function sendError(res: ServerResponse, statusCode: number, code: string, messag
 
 async function readBody(req: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = []
+  let bytes = 0
   for await (const chunk of req) {
-    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
+    const buffer = typeof chunk === 'string' ? Buffer.from(chunk) : chunk
+    bytes += buffer.length
+    if (bytes > 10 * 1024 * 1024) throw Object.assign(new Error('Request body too large'), { code: 'BODY_TOO_LARGE' })
+    chunks.push(buffer)
   }
   return Buffer.concat(chunks)
 }
@@ -51,6 +55,10 @@ export function createApiServer(options: ServerOptions) {
     const allowedOrigins = options.allowedOrigins ?? [`http://${req.headers.host}`]
     res.setHeader('Vary', 'Origin')
     res.setHeader('Cache-Control', 'no-store')
+    res.setHeader('X-Content-Type-Options', 'nosniff')
+    if (Number(req.headers['content-length']) > 10 * 1024 * 1024) {
+      sendError(res, 413, 'BODY_TOO_LARGE', 'Request body too large'); return
+    }
     if (origin && !allowedOrigins.includes(origin)) {
       sendError(res, 403, 'ORIGIN_NOT_ALLOWED', '此網站未獲准連接紀錄服務'); return
     }
@@ -366,6 +374,7 @@ export function createApiServer(options: ServerOptions) {
 
       sendError(res, 404, 'NOT_FOUND', `Cannot ${req.method} ${pathname}`)
     } catch (err: any) {
+      if (err.code === 'BODY_TOO_LARGE') { sendError(res,413,'BODY_TOO_LARGE','Request body too large'); return }
       if (err instanceof SyntaxError) { sendError(res,400,'INVALID_JSON','Invalid JSON body'); return }
       if (err.name === 'QuotaExceededError') {
         sendError(res, 413, err.code, err.message)
@@ -384,7 +393,7 @@ export function createApiServer(options: ServerOptions) {
         return
       }
 
-      sendError(res, 500, 'INTERNAL_SERVER_ERROR', err.message || 'Unknown server error')
+      sendError(res, 500, 'INTERNAL_SERVER_ERROR', '紀錄服務暫時無法回應，資料尚未確認保存。請稍後重試。')
     }
   })
 

@@ -264,11 +264,11 @@ class KbpdApiService {
     const res = await fetch(apiBase+path, {
       ...options,
       headers,
-    })
+    }).catch(() => { throw new Error('尚未保存：紀錄服務暫時無法連線，請稍後重試。') })
 
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({ error: {} }))
-      const errorMsg = errBody.error?.message || errBody.error?.code || (res.status===404?'目前無法連接紀錄服務，資料尚未保存。請稍後重試。':`紀錄服務暫時無法回應（${res.status}），請稍後重試。`)
+      const errorMsg = errBody.error?.message || errBody.error?.code || (res.status===404?'目前無法連接紀錄服務，資料尚未保存。請稍後重試。':`尚未保存：紀錄服務暫時無法回應（${res.status}），請稍後重試。`)
       throw new Error(errorMsg)
     }
 

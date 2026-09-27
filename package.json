@@ -12,7 +12,7 @@
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install chromium webkit",
     "preview": "vite preview",
-    "build:hosted": "npm run build",
+    "build:hosted": "npm run build && node scripts/verify-hosted-api.mjs",
     "test:core": "node --experimental-strip-types --test kbpd-core/tests/*.test.ts"
   },
   "dependencies": {
