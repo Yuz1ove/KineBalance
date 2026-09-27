@@ -19,3 +19,9 @@ node_modules
 public/vendor/
 public/build-identity.json
 .vercel
+
+# Original backend data must never enter source control or static hosting.
+**/.data/
+*.db
+*.db-wal
+*.db-shm

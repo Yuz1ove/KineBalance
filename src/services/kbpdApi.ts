@@ -267,7 +267,7 @@ class KbpdApiService {
     })
 
     if (!res.ok) {
-      const errBody = await res.json().catch(() => ({ error: { message: `HTTP ${res.status}` } }))
+      const errBody = await res.json().catch(() => ({ error: {} }))
       const errorMsg = errBody.error?.message || errBody.error?.code || (res.status===404?'目前無法連接紀錄服務，資料尚未保存。請稍後重試。':`紀錄服務暫時無法回應（${res.status}），請稍後重試。`)
       throw new Error(errorMsg)
     }
@@ -373,11 +373,11 @@ class KbpdApiService {
     return {...item,analysis:normalizeAnalysis(item.analysis || item.measurementOutput)}
   }
 
-  async createSession(handSide: 'LEFT' | 'RIGHT'): Promise<{ id: string; ownerUserId: string; handSide: string }> {
+  async createSession(handSide: 'LEFT' | 'RIGHT', source: MeasurementSource = 'UNKNOWN'): Promise<{ id: string; ownerUserId: string; handSide: string }> {
     return this.request<{ id: string; ownerUserId: string; handSide: string }>('/api/measurements', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ handSide }),
+      body: JSON.stringify({ handSide, source }),
     })
   }
 

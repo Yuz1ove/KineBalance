@@ -1,0 +1,19 @@
+[Unit]
+Description=KineBalance original storage API
+After=network.target
+
+[Service]
+Type=simple
+User=kinebalance
+WorkingDirectory=/srv/kinebalance/current
+EnvironmentFile=/etc/kinebalance/backend.env
+ExecStart=/usr/bin/node --experimental-strip-types kbpd-core/src/hosted.ts
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

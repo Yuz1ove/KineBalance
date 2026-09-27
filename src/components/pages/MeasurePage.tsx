@@ -78,6 +78,7 @@ export const MeasurePage: React.FC<MeasurePageProps> = ({
   const [isSaving, setIsSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [savedMeasurementId, setSavedMeasurementId] = useState<string | null>(null)
+  const pendingMeasurementId = useRef<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
 
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -95,6 +96,7 @@ export const MeasurePage: React.FC<MeasurePageProps> = ({
 
   // Start Camera handler
   const handleStartCamera = async () => {
+    pendingMeasurementId.current = null
     setCameraError(null)
     setSaveSuccess(false);setSavedMeasurementId(null);setSaveError(null);setAnalysisResult(null);setRawAnalysis(null)
     if (isStartingCamera) return
@@ -175,8 +177,12 @@ export const MeasurePage: React.FC<MeasurePageProps> = ({
     setSaveError(null)
 
     try {
-      const session = await kbpdApi.createSession(handSide)
-      const sessionId = session.id || (session as any).sessionId
+      if (!pendingMeasurementId.current) {
+        const session = await kbpdApi.createSession(handSide, source)
+        pendingMeasurementId.current = session.id || (session as any).sessionId
+      }
+      const sessionId = pendingMeasurementId.current
+      if (!sessionId) throw new Error('紀錄服務未建立有效紀錄，請重試。')
 
       const finalAnalysis = await kbpdApi.saveAnalysis(sessionId, handSide, capturedFrames, source)
       setAnalysisResult(finalAnalysis)
@@ -1015,6 +1021,7 @@ export const MeasurePage: React.FC<MeasurePageProps> = ({
             <button
               type="button"
               className="kb-btn kb-btn-secondary"
+              disabled={isSaving}
               onClick={() => {
                 setSaveSuccess(false)
                 setStep(2)

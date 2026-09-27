@@ -42,3 +42,19 @@ test('SYNTHETIC_TEST_DATA: live UI preview and saved result use the same core me
  expect(screen.getByText(/有效追蹤比例：100.0%/)).toBeInTheDocument()
  expect(screen.getByRole('img',{name:'原始相對幅度曲線',hidden:true})).toBeInTheDocument()
 })
+
+test('SYNTHETIC_TEST_DATA: rejected save preserves data and retry reuses the same native session',async()=>{
+ const frames=fixtures.fixtures.periodic.frames as any
+ vi.mocked(handDetector.getCapturedFrames).mockReturnValue(frames)
+ vi.mocked(kbpdApi.createSession).mockResolvedValue({id:'retry-session',ownerUserId:'synthetic-user',handSide:'RIGHT'})
+ const result=toAnalysisOutput(analyzeFingerTapping({sessionId:'retry-session',protocolVersion:'KBPD-FT-IMAGE-2',handSide:'RIGHT',mirrored:false,frames}))
+ vi.mocked(kbpdApi.saveAnalysis).mockRejectedValueOnce(new Error('Controlled save rejection')).mockResolvedValueOnce(result)
+ await live();fireEvent.click(screen.getByRole('button',{name:'保存這次紀錄'}))
+ await screen.findByText('Controlled save rejection')
+ expect(screen.queryByText('本次紀錄已成功保存！')).not.toBeInTheDocument()
+ fireEvent.click(screen.getByRole('button',{name:'保存這次紀錄'}))
+ await screen.findByText('本次紀錄已成功保存！')
+ expect(kbpdApi.createSession).toHaveBeenCalledTimes(1)
+ expect(kbpdApi.createSession).toHaveBeenCalledWith('RIGHT','CAMERA')
+ expect(kbpdApi.saveAnalysis).toHaveBeenNthCalledWith(2,'retry-session','RIGHT',frames,'CAMERA')
+})

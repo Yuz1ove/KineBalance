@@ -11,3 +11,8 @@ public/vendor
 public/build-identity.json
 *.tsbuildinfo
 e2e
+**/.data
+**/*.db
+**/*.db-wal
+**/*.db-shm
+deployment
