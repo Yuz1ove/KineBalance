@@ -3,6 +3,8 @@
  * Communicates with kbpd-core backend (http://127.0.0.1:4498)
  */
 
+import type { LandmarkFrame, MeasurementOutput, MeasurementSource } from '../../kbpd-core/src/measurement/contracts.ts'
+import { browserStorageEnabled, browserRequest } from './browserStorage'
 import { demoService } from '../demo/demo-service'
 import { generateDemoArciInterpretation } from '../demo/demo-arci'
 
@@ -12,11 +14,25 @@ export interface HandLandmark {
   z: number
 }
 
-export interface HandTrackingFrame {
-  frameIndex: number
-  timestampMs: number
+export interface HandTrackingFrame extends Omit<LandmarkFrame, 'tracked' | 'landmarks' | 'renderAtMs'> {
+  tracked?: boolean
   landmarks: HandLandmark[]
-  confidence: number
+  renderAtMs?: number
+  confidence?: number // legacy only: never manufacture MediaPipe confidence
+}
+
+export function toAnalysisOutput(output: MeasurementOutput): AnalysisOutput {
+  return { ...output, limitations:[...output.limitations], handSide: output.handSide as 'LEFT'|'RIGHT',
+    metrics: {...output.metrics,averageOpeningAmplitudeNorm:output.metrics.averageAmplitudeNorm,intervalsMs:[...output.metrics.intervalSequenceMs]},
+    quality: {...output.quality,status:output.quality.acceptableForKinematics?'QUALIFIED':output.quality.validFrames?'SUBOPTIMAL':'UNUSABLE',
+      trackedFrames:output.quality.validFrames,effectiveTrackingRatio:output.quality.validFrameRatio,
+      timeGapsCount:output.quality.trackingLossIntervals.filter(i=>i.reason==='TIME_GAP').length,
+      trackingLostCount:output.quality.trackingLossIntervals.filter(i=>i.reason==='TRACKING_LOST').length},
+  }
+}
+function normalizeAnalysis(output:any):AnalysisOutput|undefined {
+  if(!output)return undefined
+  return typeof output.quality?.validFrameRatio==='number'?toAnalysisOutput(output):output
 }
 
 export interface MeasurementMetrics {
@@ -30,6 +46,7 @@ export interface MeasurementMetrics {
 }
 
 export interface DataQuality {
+  acquisition?: MeasurementOutput['quality']['acquisition']
   status: 'QUALIFIED' | 'SUBOPTIMAL' | 'UNUSABLE'
   totalFrames: number
   trackedFrames: number
@@ -55,19 +72,19 @@ export interface AnalysisOutput {
 export function getQuality(analysis?: AnalysisOutput | null): DataQuality {
   if (!analysis) {
     return {
-      status: 'QUALIFIED',
+      status: 'UNUSABLE',
       totalFrames: 0,
       trackedFrames: 0,
-      effectiveTrackingRatio: 1,
+      effectiveTrackingRatio: 0,
       timeGapsCount: 0,
       trackingLostCount: 0,
     }
   }
   return analysis.quality || analysis.dataQuality || {
-    status: 'QUALIFIED',
+    status: 'UNUSABLE',
     totalFrames: 0,
     trackedFrames: 0,
-    effectiveTrackingRatio: 1,
+    effectiveTrackingRatio: 0,
     timeGapsCount: 0,
     trackingLostCount: 0,
   }
@@ -185,8 +202,8 @@ export interface DeletionReceipt {
   completedAt: string
 }
 
-const STORAGE_KEY_TOKEN = 'kbpd_user_token'
-const STORAGE_KEY_USER_ID = 'kbpd_user_id'
+const STORAGE_KEY_TOKEN = browserStorageEnabled?'kbpd_browser_token':'kbpd_user_token'
+const STORAGE_KEY_USER_ID = browserStorageEnabled?'kbpd_browser_user_id':'kbpd_user_id'
 
 class KbpdApiService {
   private token: string | null = null
@@ -236,6 +253,7 @@ class KbpdApiService {
   }
 
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+    if(browserStorageEnabled)return browserRequest<T>(path,options,this.token)
     const headers: Record<string, string> = {
       ...(options.headers as Record<string, string> || {}),
     }
@@ -295,7 +313,7 @@ class KbpdApiService {
     return {
       userId: data.userId || '',
       totalBytesUsed: data.totalBytesUsed ?? data.usedBytes ?? 0,
-      quotaBytes: data.quotaBytes ?? 100 * 1024 * 1024,
+      quotaBytes: data.quotaBytes ?? 50 * 1024 * 1024,
       mediaFilesCount: data.mediaFilesCount ?? data.fileCount ?? 0,
       measurementsCount: data.measurementsCount ?? data.sessionCount ?? 0,
     }
@@ -334,7 +352,7 @@ class KbpdApiService {
         id: item.id || session.id,
         ownerUserId: item.ownerUserId || session.ownerUserId,
         session,
-        analysis: item.analysis || item.measurementOutput,
+        analysis: normalizeAnalysis(item.analysis || item.measurementOutput),
         media: item.media || (item.mediaAssets && item.mediaAssets[0]),
         interpretation: item.interpretation,
       }
@@ -352,7 +370,8 @@ class KbpdApiService {
       const demoItem = demoService.getMeasurementById(id)
       if (demoItem) return demoItem
     }
-    return this.request<MeasurementRecord>(`/api/me/measurements/${id}`)
+    const item=await this.request<MeasurementRecord & {measurementOutput?:MeasurementOutput}>(`/api/me/measurements/${id}`)
+    return {...item,analysis:normalizeAnalysis(item.analysis || item.measurementOutput)}
   }
 
   async createSession(handSide: 'LEFT' | 'RIGHT'): Promise<{ id: string; ownerUserId: string; handSide: string }> {
@@ -375,23 +394,13 @@ class KbpdApiService {
     })
   }
 
-  async saveAnalysis(measurementId: string, handSide: 'LEFT' | 'RIGHT', frames: HandTrackingFrame[]): Promise<AnalysisOutput> {
-    return this.request<AnalysisOutput>(`/api/measurements/${measurementId}/analyze`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sessionId: measurementId,
-        handSide,
-        protocolVersion: 'KBPD-FT-1.0',
-        mirrored: false,
-        frames: frames.map((f, idx) => ({
-          frameIndex: f.frameIndex ?? idx,
-          timestampMs: f.timestampMs ?? idx * 33,
-          tracked: !!(f.landmarks && f.landmarks.length === 21),
-          landmarks: f.landmarks || [],
-        })),
-      }),
+  async saveAnalysis(measurementId: string, handSide: 'LEFT' | 'RIGHT', frames: HandTrackingFrame[], source: MeasurementSource = 'UNKNOWN'): Promise<AnalysisOutput> {
+    const output=await this.request<MeasurementOutput>(`/api/measurements/${measurementId}/analyze`, {
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({sessionId:measurementId,handSide,source,protocolVersion:frames.some(f=>f.frameWidth&&f.frameHeight)?'KBPD-FT-IMAGE-2':'KBPD-FT-1.0',mirrored:false,displayMirrored:source==='CAMERA',
+        frames:frames.map(f=>({...f,tracked:f.tracked===true,landmarks:f.landmarks}))}),
     })
+    return toAnalysisOutput(output)
   }
 
   async interpret(measurementId: string, userQuery?: string): Promise<ArciInterpretation> {
@@ -460,6 +469,11 @@ class KbpdApiService {
 
   // Real Hand Video Fixture Replay
   async getRealVideoFixture(disturbed = false): Promise<HandTrackingFrame[] | { meta: any; frames: HandTrackingFrame[] }> {
+    if(import.meta.env.VITE_HOSTED_PREVIEW==='true'){
+      const response=await fetch(`/fixtures/finger-tapping-synthetic${disturbed?'-disturbed':''}.json`)
+      if(!response.ok)throw new Error('合成測試資料載入失敗')
+      return response.json()
+    }
     return this.request<any>(`/api/fixtures/real-video?disturbed=${disturbed}`)
   }
 }

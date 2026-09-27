@@ -14,3 +14,8 @@ vite.config.d.ts
 
 output/playwright/
 .playwright-cli/
+
+node_modules
+public/vendor/
+public/build-identity.json
+.vercel

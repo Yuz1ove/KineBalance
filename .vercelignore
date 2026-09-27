@@ -1,0 +1,13 @@
+node_modules
+.git
+.env*
+output
+evidence
+**/*.test.ts
+**/*.test.tsx
+kbpd-core/tests
+dist
+public/vendor
+public/build-identity.json
+*.tsbuildinfo
+e2e

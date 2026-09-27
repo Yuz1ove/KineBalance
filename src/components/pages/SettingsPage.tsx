@@ -1,3 +1,4 @@
+import { browserStorageEnabled } from '../../services/browserStorage'
 import React, { useState, useEffect } from 'react'
 import {
   Key,
@@ -130,7 +131,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const handleDeleteAllData = async () => {
     if (
       !confirm(
-        '警告：此操作將徹底刪除您在伺服器的身分、所有量測紀錄與私有檔案，且無法復原！\n\n您確定要刪除所有資料嗎？'
+        browserStorageEnabled?'此操作會刪除此瀏覽器中目前身分的量測紀錄，無法復原。確定刪除？':'警告：此操作將刪除目前身分的紀錄與私有檔案，無法復原。確定刪除？'
       )
     ) {
       return
@@ -176,13 +177,14 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         </p>
       </MotionSection>
 
+      {browserStorageEnabled && <p className="kb-alert">目前使用此瀏覽器的本機保存空間，不是雲端帳號。資料不會跨裝置同步，清除網站資料會刪除紀錄；憑證只能在原瀏覽器讀取既有資料。</p>}
       {/* SECTION 1: Personal Record Identity */}
       <MotionSection className="kb-card">
         <div className="kb-card-header">
           <div>
             <h2 className="kb-card-title">個人紀錄身分與憑證</h2>
             <p className="kb-card-subtitle">
-              本系統採用伺服端發放之隨機金鑰進行所有權隔離，無需提供身分證號或電子信箱。
+              {browserStorageEnabled?'以瀏覽器產生的隨機代碼區分本機紀錄，無需提供身分證號或電子信箱。':'本系統採用伺服端發放之隨機金鑰進行所有權隔離，無需提供身分證號或電子信箱。'}
             </p>
           </div>
           <span className={`kb-badge ${isDemo ? 'kb-badge-warning' : token ? 'kb-badge-success' : 'kb-badge-warning'}`}>
@@ -278,7 +280,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               marginBottom: 12,
             }}
           >
-            若您曾在此處或另一瀏覽器產生過憑證，可於此貼上還原歷史量測：
+            {browserStorageEnabled?'僅能恢復此瀏覽器仍保存的身分；憑證不包含紀錄，也不能跨裝置還原。':'若您曾在此處或另一瀏覽器產生過憑證，可於此貼上還原歷史量測：'}
           </p>
 
           <form
@@ -287,7 +289,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           >
             <input
               type="text"
-              placeholder="貼上您的 kbpd_sec_ 憑證"
+              placeholder={browserStorageEnabled?'貼上此瀏覽器原有憑證':'貼上您的 kbpd_sec_ 憑證'}
               className="kb-input"
               style={{
                 flex: '1 1 280px',
@@ -416,7 +418,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           <div>
             <h2 className="kb-card-title">管理資料容量與配額</h2>
             <p className="kb-card-subtitle">
-              本機資料庫與私有檔案受限額保護，防止硬碟空間被過度佔用。
+              {browserStorageEnabled?'此瀏覽器最多保存 50MB 量測資料，影像不會保存。':'本機資料庫與私有檔案受限額保護，防止硬碟空間被過度佔用。'}
             </p>
           </div>
           <button
@@ -598,8 +600,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           }}
         >
           <p>
-            <strong>本機專屬保存：</strong> 您的所有量測影像與時序數據均保存在本機目錄（
-            <code>.data/media</code>），絕不透過雲端進行二次分析或公開展示。
+            <strong>本機專屬保存：</strong> {browserStorageEnabled?'只保存原始關鍵點與計算結果，不保存影像。資料僅在目前瀏覽器內，不會上傳或同步。':<>您的量測影像與時序數據保存在本機目錄（<code>.data/media</code>），不透過雲端進行二次分析或公開展示。</>}
           </p>
           <p style={{ marginTop: 8 }}>
             <strong>無人臉與音訊：</strong>{' '}
@@ -625,7 +626,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               刪除我的資料 (連帶銷毀與晚到阻絕)
             </h2>
             <p className="kb-card-subtitle">
-              徹底註銷身分並粉碎所有本機關聯資料。此操作不可逆。
+              刪除目前身分與關聯紀錄。此操作不可逆。
             </p>
           </div>
         </div>
@@ -641,7 +642,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           <p>
             <strong>連帶清除範圍說明：</strong>
           </p>
-          <ul style={{ paddingLeft: 20, marginTop: 6 }}>
+          {browserStorageEnabled ? <p>刪除此瀏覽器中目前身分的原始關鍵點與分析結果，並停用該本機身分。影像未儲存，手動匯出的檔案不在刪除範圍內。此操作不代表磁碟的鑑識安全抹除。</p> : (          <ul style={{ paddingLeft: 20, marginTop: 6 }}>
             <li>
               即刻註銷您的 <code>kbpd_sec_</code> 存取權杖，所有進行中連線立即失效。
             </li>
@@ -661,7 +662,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 限制宣告：您過去已手動匯出或下載至本機其他資料夾的檔案，不在本系統控制與清除範圍內。
               </em>
             </li>
-          </ul>
+          </ul>)}
         </div>
 
         {deletionError && (

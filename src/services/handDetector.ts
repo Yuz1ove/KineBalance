@@ -1,232 +1,272 @@
-/**
- * Hand tracking & kinematic measurement client utility.
- * Integrates MediaPipe Hands with canvas rendering and real-time hysteresis tap detection.
- */
-
+/** Legacy MediaPipe model retained. Raw measurement and overlay rendering are independent. */
 import type { HandTrackingFrame, HandLandmark } from './kbpdApi'
+import { ALGORITHM_VERSION, analyzeFingerTapping } from '../../kbpd-core/src/measurement/detector.ts'
+import type { MeasurementOutput } from '../../kbpd-core/src/measurement/contracts.ts'
 
+export interface CapturePerformance {
+  width: number | null
+  height: number | null
+  requestedFps: number | null
+  source: string
+  algorithmVersion: string
+  validRatio: number | null
+  gaps: number
+  losses: number
+  reacquisitions: number
+  cameraFps: number | null
+  inferenceFps: number | null
+  renderFps: number | null
+  skippedPresentedFrames: number | null
+  duplicateFramesSkipped: number
+  inferenceLatencyMs: number | null
+  cameraSettingsFps: number | null
+}
 export interface RealtimeKinematics {
   tapCount: number
   currentFrequencyHz: number
   normalizedDistance: number
   isTracking: boolean
+  validity?: string
+  readyToMeasure?: boolean
+  progress?: { processed: number; seconds: number; duration: number }
+  performance?: CapturePerformance
 }
 
 export class HandDetectorService {
+  private cancellations = new Set<()=>void>()
+  private watchdog: ReturnType<typeof setTimeout> | null = null
+  private ended: (()=>void) | null = null
+  private replayDuration = 0
+  private source: 'CAMERA' | 'REAL_VIDEO' = 'CAMERA'
+  private bounded<T>(promise:Promise<T>,run:number,code:string,ms=15000):Promise<T> {
+    return new Promise((resolve,reject)=>{
+      const cancel=()=>finish(new Error('CANCELLED'))
+      const timer=setTimeout(()=>finish(new Error(code)),ms)
+      const finish=(error?:Error,value?:T)=>{clearTimeout(timer);this.cancellations.delete(cancel);error?reject(error):resolve(value as T)}
+      this.cancellations.add(cancel)
+      promise.then(value=>run===this.runId?finish(undefined,value):finish(new Error('CANCELLED')),error=>finish(error))
+    })
+  }
+
   private hands: any = null
   private stream: MediaStream | null = null
   private animationFrameId: number | null = null
+  private videoFrameId: number | null = null
+  private renderFrameId: number | null = null
+  private video: HTMLVideoElement | null = null
+  private canvas: HTMLCanvasElement | null = null
   private isRunning = false
+  private recording = false
+  private runId = 0
+  private recordingId = 0
   private capturedFrames: HandTrackingFrame[] = []
-  private startTimeMs = 0
+  private firstSourceMs: number | null = null
+  private lastSourceMs = -Infinity
+  private expectedHand: 'LEFT' | 'RIGHT' = 'RIGHT'
+  private analysis: MeasurementOutput | null = null
+  private stableFrames = 0
+  private telemetryStart = 0
+  private renderCount = 0
+  private inferenceCount = 0
+  private latencyTotal = 0
+  private duplicates = 0
+  private firstPresented: number | null = null
+  private lastPresented: number | null = null
+  private cameraFirstMs: number | null = null
+  private cameraLastMs: number | null = null
+  private skipped = 0
 
-  // Real-time kinematic tracking state
-  private tapCount = 0
-  private lastValleyTime = 0
-  private lastPeakDist = 0
-  private tapIntervals: number[] = []
-  private state: 'SEEKING_PEAK' | 'SEEKING_VALLEY' = 'SEEKING_PEAK'
-  private currentNormDist = 0
-
-  // Load MediaPipe script dynamically if not present
-  async ensureScriptLoaded(): Promise<void> {
-    if (typeof window === 'undefined') return
-    if ((window as any).Hands) return
-
-    return new Promise((resolve, reject) => {
-      const existing = document.querySelector('script[src*="hands.js"]')
-      if (existing) {
-        if ((window as any).Hands) return resolve()
-        existing.addEventListener('load', () => resolve())
-        existing.addEventListener('error', (err) => reject(err))
-        return
-      }
-
-      const script = document.createElement('script')
-      script.src = '/vendor/mediapipe/hands.js'
-      script.async = true
-      script.onload = () => resolve()
-      script.onerror = (e) => reject(new Error('Failed to load MediaPipe Hands script: ' + e))
-      document.head.appendChild(script)
-    })
-  }
-
-  async initialize(): Promise<void> {
-    await this.ensureScriptLoaded()
-    const HandsClass = (window as any).Hands
-    if (!HandsClass) {
-      throw new Error('MediaPipe Hands library could not be initialized')
+  async initialize(run=this.runId): Promise<any> {
+    if (!(window as any).Hands) {
+      await new Promise<void>((resolve,reject)=>{
+        const script=document.createElement('script')
+        const cleanup=()=>{clearTimeout(timer);this.cancellations.delete(cancel);script.onload=null;script.onerror=null}
+        const fail=(code:string)=>{cleanup();script.remove();reject(new Error(code))}
+        const cancel=()=>fail('CANCELLED')
+        const timer=setTimeout(()=>fail('MODEL_LOAD_TIMEOUT'),15000)
+        this.cancellations.add(cancel)
+        script.src='/vendor/mediapipe/0.4.1675469240/hands.js';script.async=true
+        script.onload=()=>{cleanup();resolve()};script.onerror=()=>fail('MODEL_LOAD_FAILED')
+        document.head.appendChild(script)
+      })
     }
-
-    this.hands = new HandsClass({
-      locateFile: (file: string) => `/vendor/mediapipe/${file}`,
-    })
-
-    this.hands.setOptions({
-      maxNumHands: 1,
-      modelComplexity: 1,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5,
-    })
+    if(run!==this.runId)throw new Error('CANCELLED')
+    const hands=new (window as any).Hands({locateFile:(file:string)=>`/vendor/mediapipe/0.4.1675469240/${file}`})
+    hands.setOptions({maxNumHands:1,modelComplexity:1,minDetectionConfidence:.5,minTrackingConfidence:.5})
+    this.hands=hands
+    if(hands.initialize) await this.bounded(Promise.resolve(hands.initialize()),run,'MODEL_LOAD_TIMEOUT',30000)
+    return hands
   }
-
   resetRecording() {
-    this.capturedFrames = []
-    this.tapCount = 0
-    this.lastValleyTime = 0
-    this.lastPeakDist = 0
-    this.tapIntervals = []
-    this.state = 'SEEKING_PEAK'
-    this.currentNormDist = 0
-    this.startTimeMs = performance.now()
+    this.recordingId++
+    this.recording=true
+    this.capturedFrames=[]
+    this.firstSourceMs=null
+    this.analysis=null
+    this.stableFrames=0
   }
-
-  getCapturedFrames(): HandTrackingFrame[] {
-    return [...this.capturedFrames]
-  }
-
-  getKinematics(): RealtimeKinematics {
-    let currentFrequencyHz = 0
-    if (this.tapIntervals.length > 0) {
-      const recent = this.tapIntervals.slice(-3)
-      const avgInterval = recent.reduce((a, b) => a + b, 0) / recent.length
-      if (avgInterval > 0) {
-        currentFrequencyHz = Math.round((1000 / avgInterval) * 10) / 10
-      }
-    }
-
+  getCapturedFrames(): HandTrackingFrame[] { return structuredClone(this.capturedFrames) }
+  getAnalysis(): MeasurementOutput | null { return this.analysis }
+  getPerformance(): CapturePerformance {
+    const seconds=(performance.now()-this.telemetryStart)/1000
+    const cameraSeconds=((this.cameraLastMs??0)-(this.cameraFirstMs??0))/1000
     return {
-      tapCount: this.tapCount,
-      currentFrequencyHz,
-      normalizedDistance: this.currentNormDist,
-      isTracking: this.isRunning,
+      width:this.video?.videoWidth||null,height:this.video?.videoHeight||null,requestedFps:this.source==='CAMERA'?30:null,
+      source:this.source,algorithmVersion:ALGORITHM_VERSION,validRatio:this.analysis?.quality.validFrameRatio??null,
+      gaps:this.analysis?.quality.trackingLossIntervals.filter(x=>x.reason==='TIME_GAP').length??0,
+      losses:this.analysis?.quality.trackingLossIntervals.filter(x=>x.reason==='TRACKING_LOST').length??0,
+      reacquisitions:this.analysis?.trace?.frames.filter(x=>x.validity==='REACQUIRING').length??0,
+      cameraFps:cameraSeconds>0&&this.lastPresented!==null&&this.firstPresented!==null ? (this.lastPresented-this.firstPresented)/cameraSeconds : null,
+      inferenceFps:seconds>0?this.inferenceCount/seconds:null,
+      renderFps:seconds>0?this.renderCount/seconds:null,
+      skippedPresentedFrames:this.lastPresented===null?null:this.skipped,
+      duplicateFramesSkipped:this.duplicates,
+      inferenceLatencyMs:this.inferenceCount?this.latencyTotal/this.inferenceCount:null,
+      cameraSettingsFps:this.stream?.getVideoTracks()[0]?.getSettings().frameRate??null,
     }
   }
+  getKinematics(): RealtimeKinematics {
+    const last=this.analysis?.trace?.frames.at(-1)
+    return {tapCount:this.analysis?.metrics.validTapCount??0,currentFrequencyHz:this.analysis?.metrics.averageFrequencyHz??0,
+      normalizedDistance:last?.valid ? last.normalizedDistance : 0,isTracking:this.isRunning && last?.valid===true,
+      progress:this.source==='REAL_VIDEO'?{processed:this.capturedFrames.length,seconds:(this.capturedFrames.at(-1)?.sourceTimestampMs??0)/1000,duration:this.replayDuration}:undefined,
+      validity:last?.validity??'TRACK_LOST',readyToMeasure:this.isRunning && this.stableFrames>=5,performance:this.getPerformance()}
+  }
 
-  // Real-time distance and hysteresis peak-valley detection
-  private processLandmarks(landmarks: HandLandmark[], timestampMs: number) {
-    if (!landmarks || landmarks.length < 21) return
+  private acceptResult(results:any, sourceMs:number, started:number, completed:number, width:number,height:number) {
+    if(this.firstSourceMs===null)this.firstSourceMs=sourceMs
+    const raw=results.multiHandLandmarks?.[0]??[]
+    const handedness=results.multiHandedness?.[0]
+    // MediaPipe Hands assumes mirrored input; our video pixels are unmirrored (CSS is display-only).
+    const side=handedness?.label==='Left'?'RIGHT':handedness?.label==='Right'?'LEFT':'UNKNOWN'
+    const frame:HandTrackingFrame={frameIndex:this.capturedFrames.length,timestampMs:sourceMs-this.firstSourceMs,sourceTimestampMs:sourceMs,
+      frameWidth:width,frameHeight:height,inferenceStartedAtMs:started,inferenceCompletedAtMs:completed,
+      tracked:raw.length===21,landmarks:raw.map((p:HandLandmark)=>({x:p.x,y:p.y,z:p.z})),handedness:side,handednessScore:handedness?.score}
+    this.capturedFrames.push(frame)
+    // Preview is bounded; the actual recording retains every source frame, including loss.
+    if(!this.recording && this.capturedFrames.length>60)this.capturedFrames.shift()
+    this.analysis=analyzeFingerTapping({sessionId:'preview-session',source:this.source,protocolVersion:'KBPD-FT-IMAGE-2',handSide:this.expectedHand,mirrored:false,displayMirrored:this.source==='CAMERA',frames:this.capturedFrames.map(f=>({...f,tracked:f.tracked===true}))})
+    if(this.analysis.trace?.frames.at(-1)?.valid)this.stableFrames++;else this.stableFrames=0
+    return raw
+  }
 
-    // Thumb tip = 4, Index tip = 8, Wrist = 0, Middle MCP = 9
-    const thumb = landmarks[4]
-    const index = landmarks[8]
-    const wrist = landmarks[0]
-    const mcp = landmarks[9]
-
-    const tapDist = Math.hypot(thumb.x - index.x, thumb.y - index.y, thumb.z - index.z)
-    const palmLength = Math.hypot(wrist.x - mcp.x, wrist.y - mcp.y, wrist.z - mcp.z)
-
-    const normDist = palmLength > 0.001 ? tapDist / palmLength : tapDist
-    this.currentNormDist = Math.round(normDist * 100) / 100
-
-    // Record frame
-    this.capturedFrames.push({
-      frameIndex: this.capturedFrames.length,
-      timestampMs: Math.round(timestampMs),
-      landmarks: landmarks.map(l => ({ x: l.x, y: l.y, z: l.z })),
-      confidence: 0.9,
-    })
-
-    // Hysteresis peak-valley detection
-    // Normal open hand is ~ 0.7 - 1.2; closed pinch is ~ 0.15 - 0.35
-    const PEAK_THRESHOLD = 0.55
-    const VALLEY_THRESHOLD = 0.35
-
-    if (this.state === 'SEEKING_PEAK') {
-      if (normDist > PEAK_THRESHOLD && normDist > this.lastPeakDist) {
-        this.lastPeakDist = normDist
-      } else if (normDist < PEAK_THRESHOLD - 0.08 && this.lastPeakDist > PEAK_THRESHOLD) {
-        // Passed peak, now seeking valley (contact closure)
-        this.state = 'SEEKING_VALLEY'
+  async startCamera(videoElement:HTMLVideoElement,canvasElement:HTMLCanvasElement,onFrameProcessed?:(k:RealtimeKinematics)=>void,expectedHand:'LEFT'|'RIGHT'='RIGHT',onError?:(message:string)=>void,onStage?:(stage:string)=>void,replay?:{url:string;onEnded:()=>void}):Promise<boolean> {
+    this.stopCamera()
+    const run=this.runId
+    this.expectedHand=expectedHand
+    this.source=replay?'REAL_VIDEO':'CAMERA'
+    let stage='PERMISSION_WAITING'
+    const update=(next:string)=>{stage=next;if(run===this.runId)onStage?.(next)}
+    try {
+      this.video=videoElement;this.canvas=canvasElement
+      if(replay){update('VIDEO_LOADING');videoElement.src=replay.url;videoElement.load()}
+      else {
+        update('PERMISSION_WAITING')
+        if(!navigator.mediaDevices?.getUserMedia)throw new Error('DEVICE_NOT_FOUND')
+        const request=navigator.mediaDevices.getUserMedia({video:{width:{ideal:640},height:{ideal:480},frameRate:{ideal:30},facingMode:'user'},audio:false})
+        request.then(stream=>{if(run!==this.runId)stream.getTracks().forEach(t=>t.stop())},()=>{})
+        const stream=await this.bounded(request,run,'CAMERA_REQUEST_TIMEOUT')
+        if(run!==this.runId){stream.getTracks().forEach(t=>t.stop());return false}
+        this.stream=stream;videoElement.srcObject=stream;update('STREAM_ACQUIRED')
       }
-    } else if (this.state === 'SEEKING_VALLEY') {
-      if (normDist <= VALLEY_THRESHOLD) {
-        // Valid tap closed!
-        this.tapCount++
-        if (this.lastValleyTime > 0) {
-          const interval = timestampMs - this.lastValleyTime
-          if (interval > 80 && interval < 1500) {
-            this.tapIntervals.push(interval)
-          }
+      await this.bounded(videoElement.play(),run,'VIDEO_PLAY_TIMEOUT')
+      update('VIDEO_PLAYABLE')
+      if(replay){videoElement.pause();if(!Number.isFinite(videoElement.duration)||videoElement.duration>30)throw new Error('VIDEO_DURATION_LIMIT');if(videoElement.duration<1)throw new Error('VIDEO_TOO_SHORT');this.replayDuration=videoElement.duration}
+      update('MODEL_LOADING')
+      const hands=await this.initialize(run)
+      if(run!==this.runId)return false
+      update('MODEL_READY')
+      const ctx=canvasElement.getContext('2d')
+      if(!ctx)throw new Error('Canvas 2D context unavailable')
+      // Snapshot freezes the source image associated with mediaTime while async inference runs.
+      const snapshot=document.createElement('canvas'),snapshotCtx=snapshot.getContext('2d')!
+      this.isRunning=true;this.resetRecording();this.recording=!!replay;this.lastSourceMs=-Infinity
+      this.telemetryStart=performance.now();this.renderCount=0;this.inferenceCount=0;this.latencyTotal=0;this.duplicates=0
+      this.firstPresented=null;this.lastPresented=null;this.cameraFirstMs=null;this.cameraLastMs=null;this.skipped=0
+      let pending:{source:number;start:number;recording:number;width:number;height:number}|null=null
+      const armWatchdog=(code:string)=>{
+        if(this.watchdog)clearTimeout(this.watchdog)
+        this.watchdog=setTimeout(()=>{if(run!==this.runId)return;this.stopCamera();onStage?.(code);onError?.(code)},10000)
+      }
+      hands.onResults((results:any)=>{
+        if(!this.isRunning||run!==this.runId||!pending)return
+        update('FIRST_INFERENCE');
+        const completed=performance.now();this.inferenceCount++;this.latencyTotal+=completed-pending.start
+        if(pending.recording!==this.recordingId)return
+        if(canvasElement.width!==pending.width)canvasElement.width=pending.width
+        if(canvasElement.height!==pending.height)canvasElement.height=pending.height
+        this.renderCount++
+        ctx.clearRect(0,0,canvasElement.width,canvasElement.height)
+        const raw=this.acceptResult(results,pending.source,pending.start,completed,pending.width,pending.height)
+        // One CSS mirror on both video and canvas; no context mirror and no measurement smoothing.
+        if(raw.length===21 && raw.every((p:HandLandmark)=>Number.isFinite(p.x)&&Number.isFinite(p.y))) this.drawHandSkeleton(ctx,raw,canvasElement.width,canvasElement.height)
+        const frame=this.capturedFrames.at(-1);if(frame)frame.renderAtMs=performance.now()
+        const k=this.getKinematics();update(k.isTracking?'TRACKING':raw.length?'TRACKING_INVALID':'NO_HAND');onFrameProcessed?.(k)
+      })
+      const schedule=()=>{
+        if(!this.isRunning||run!==this.runId||replay)return
+        if(typeof videoElement.requestVideoFrameCallback==='function')this.videoFrameId=videoElement.requestVideoFrameCallback((_now,meta)=>void processFrame(meta.mediaTime*1000,meta.presentedFrames))
+        else this.animationFrameId=requestAnimationFrame(()=>void processFrame(videoElement.currentTime*1000))
+      }
+      const processFrame=async(source:number,presented?:number)=>{
+        if(!this.isRunning||run!==this.runId)return
+        if(videoElement.readyState<2||!Number.isFinite(source)){schedule();return}
+        if(source<=this.lastSourceMs){this.duplicates++;schedule();return}
+        this.lastSourceMs=source
+        if(presented!==undefined){
+          if(this.lastPresented!==null)this.skipped+=Math.max(0,presented-this.lastPresented-1)
+          if(this.firstPresented===null){this.firstPresented=presented;this.cameraFirstMs=source}
+          this.lastPresented=presented;this.cameraLastMs=source
         }
-        this.lastValleyTime = timestampMs
-        this.lastPeakDist = 0
-        this.state = 'SEEKING_PEAK'
+        snapshot.width=videoElement.videoWidth;snapshot.height=videoElement.videoHeight
+        if(!snapshot.width||!snapshot.height){schedule();return}
+        snapshotCtx.drawImage(videoElement,0,0)
+        if(this.recording && (this.capturedFrames.length>=900 || (this.firstSourceMs!==null && source-this.firstSourceMs>30000))){this.stopCamera();onError?.('CAPTURE_LIMIT');return}
+        armWatchdog('INFERENCE_TIMEOUT')
+        pending={source,start:performance.now(),recording:this.recordingId,width:snapshot.width,height:snapshot.height}
+        try{await hands.send({image:snapshot})}catch(err){if(run===this.runId){console.error('[KineBalance] inference',err);this.stopCamera();onStage?.('INFERENCE_FAILED');onError?.('INFERENCE_FAILED: '+(err instanceof Error?err.message:'手部追蹤中斷'))}return}
+        pending=null;if(run!==this.runId)return;if(this.watchdog)clearTimeout(this.watchdog);if(replay)return;armWatchdog('VIDEO_NO_NEW_FRAMES');schedule()
       }
+      armWatchdog('VIDEO_NO_NEW_FRAMES')
+      if(replay){
+        // Paused decoding: inference consumes each 1/30-second media sample before seeking.
+        // Wall-clock speed never determines completion and slow inference cannot skip samples.
+        const decode=async()=>{
+          try{
+            for(let index=0;index<Math.ceil(this.replayDuration*30);index++){
+              if(!this.isRunning||run!==this.runId)return
+              const seconds=index/30
+              if(Math.abs(videoElement.currentTime-seconds)>0.0001){
+                await new Promise<void>((resolve,reject)=>{
+                  const cleanup=()=>{clearTimeout(timer);this.cancellations.delete(cancel);videoElement.removeEventListener('seeked',done);videoElement.removeEventListener('error',fail)}
+                  const done=()=>{cleanup();resolve()}
+                  const fail=()=>{cleanup();reject(new Error('VIDEO_DECODE_FAILED'))}
+                  const cancel=()=>{cleanup();reject(new Error('CANCELLED'))}
+                  const timer=setTimeout(fail,10000)
+                  this.cancellations.add(cancel)
+                  videoElement.addEventListener('seeked',done,{once:true});videoElement.addEventListener('error',fail,{once:true})
+                  videoElement.currentTime=seconds
+                })
+              }
+              await processFrame(seconds*1000)
+              // Yield for progress rendering and cancellation between decoded frames.
+              await new Promise(resolve=>setTimeout(resolve,0))
+            }
+            if(this.isRunning&&run===this.runId)replay.onEnded()
+          }catch(error){if(run===this.runId){console.error('[KineBalance] video decode',error);this.stopCamera();onError?.('VIDEO_DECODE_FAILED')}}
+        }
+        void decode()
+      }else schedule()
+      return true
+    }catch(err){
+      if(run!==this.runId)return false
+      const name=typeof err==='object' && err!==null && 'name' in err?String(err.name):''
+      console.error('[KineBalance] capture start',{stage,error:err})
+      const code=({NotSupportedError:stage==='PERMISSION_WAITING'?'CAMERA_UNSUPPORTED':'VIDEO_DECODE_FAILED',NotAllowedError:'PERMISSION_DENIED',NotFoundError:'DEVICE_NOT_FOUND',NotReadableError:'DEVICE_NOT_READABLE',OverconstrainedError:'CONSTRAINT_UNSUPPORTED'} as Record<string,string>)[name]
+        ?? (stage==='MODEL_LOADING'?'MODEL_LOAD_FAILED: ':'')+(err instanceof Error?err.message:String(err))
+      this.stopCamera();onStage?.(code);throw new Error(code)
     }
   }
-
-  async startCamera(
-    videoElement: HTMLVideoElement,
-    canvasElement: HTMLCanvasElement,
-    onFrameProcessed?: (kinematics: RealtimeKinematics) => void
-  ): Promise<void> {
-    await this.initialize()
-
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        width: { ideal: 640 },
-        height: { ideal: 480 },
-        frameRate: { ideal: 30 },
-        facingMode: 'user',
-      },
-      audio: false,
-    })
-
-    videoElement.srcObject = this.stream
-    await videoElement.play()
-
-    this.isRunning = true
-    this.resetRecording()
-
-    const canvasCtx = canvasElement.getContext('2d')
-    if (!canvasCtx) throw new Error('Canvas 2D context unavailable')
-
-    this.hands.onResults((results: any) => {
-      if (!this.isRunning) return
-
-      canvasElement.width = videoElement.videoWidth || 640
-      canvasElement.height = videoElement.videoHeight || 480
-
-      canvasCtx.save()
-      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height)
-      // Mirror canvas to match selfie preview
-      canvasCtx.translate(canvasElement.width, 0)
-      canvasCtx.scale(-1, 1)
-
-      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-        const rawLandmarks = results.multiHandLandmarks[0]
-        const landmarks: HandLandmark[] = rawLandmarks.map((pt: any) => ({
-          x: pt.x,
-          y: pt.y,
-          z: pt.z || 0,
-        }))
-
-        const elapsed = performance.now() - this.startTimeMs
-        this.processLandmarks(landmarks, elapsed)
-
-        // Draw skeleton
-        this.drawHandSkeleton(canvasCtx, landmarks, canvasElement.width, canvasElement.height)
-      }
-
-      canvasCtx.restore()
-
-      if (onFrameProcessed) {
-        onFrameProcessed(this.getKinematics())
-      }
-    })
-
-    const processFrame = async () => {
-      if (!this.isRunning) return
-      if (videoElement.readyState >= 2) {
-        await this.hands.send({ image: videoElement })
-      }
-      this.animationFrameId = requestAnimationFrame(processFrame)
-    }
-
-    this.animationFrameId = requestAnimationFrame(processFrame)
-  }
-
   // Draw hand skeleton with elegant sage-green and terracotta lines
   drawHandSkeleton(
     ctx: CanvasRenderingContext2D,
@@ -282,26 +322,20 @@ export class HandDetectorService {
   }
 
   stopCamera() {
-    this.isRunning = false
-    if (this.animationFrameId !== null) {
-      cancelAnimationFrame(this.animationFrameId)
-      this.animationFrameId = null
-    }
-
-    if (this.stream) {
-      this.stream.getTracks().forEach((track) => {
-        track.stop()
-      })
-      this.stream = null
-    }
-
-    if (this.hands) {
-      try {
-        this.hands.close()
-      } catch {}
-      this.hands = null
-    }
+    this.isRunning=false;this.runId++
+    for(const cancel of [...this.cancellations])cancel()
+    if(this.watchdog)clearTimeout(this.watchdog);this.watchdog=null
+    if(this.video && this.ended)this.video.removeEventListener('ended',this.ended);this.ended=null
+    if(this.animationFrameId!==null)cancelAnimationFrame(this.animationFrameId)
+    if(this.renderFrameId!==null)cancelAnimationFrame(this.renderFrameId)
+    if(this.videoFrameId!==null)this.video?.cancelVideoFrameCallback(this.videoFrameId)
+    this.animationFrameId=null;this.renderFrameId=null;this.videoFrameId=null
+    this.stream?.getTracks().forEach(t=>t.stop());this.stream=null
+    if(this.video){this.video.pause();this.video.srcObject=null;if(this.source==='REAL_VIDEO'){this.video.removeAttribute('src');this.video.load()}}
+    this.video=null
+    this.canvas?.getContext('2d')?.clearRect(0,0,this.canvas.width,this.canvas.height);this.canvas=null
+    const hands=this.hands;this.hands=null
+    if(hands)try{Promise.resolve(hands.close()).catch(()=>{})}catch{}
   }
 }
-
 export const handDetector = new HandDetectorService()
