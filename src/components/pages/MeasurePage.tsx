@@ -21,7 +21,6 @@ import { kbpdApi, getQuality, toAnalysisOutput, type HandTrackingFrame, type Ana
 import { analyzeFingerTapping } from '../../../kbpd-core/src/measurement/detector.ts'
 import type { MeasurementOutput } from '../../../kbpd-core/src/measurement/contracts.ts'
 import { handDetector, type RealtimeKinematics } from '../../services/handDetector'
-import { browserStorageEnabled } from '../../services/browserStorage'
 import { MotionSection } from '../motion/MotionSection'
 import { MetricGlassCard } from '../motion/MetricGlassCard'
 
@@ -200,7 +199,7 @@ export const MeasurePage: React.FC<MeasurePageProps> = ({
 
   return (
     <div className="kb-measure-page">
-      {browserStorageEnabled && <p className="kb-alert">影像不會上傳。紀錄僅保存在此瀏覽器，不跨裝置同步；清除網站資料會刪除紀錄。</p>}
+      <p>影像僅在瀏覽器分析；量測紀錄由原有紀錄服務保存。</p>
       {/* Page Header */}
       <MotionSection className="kb-page-header">
         <div className="kb-page-tagline">KineBalance 運動學評估流程</div>
@@ -994,7 +993,7 @@ export const MeasurePage: React.FC<MeasurePageProps> = ({
             <div className="kb-alert kb-alert-success">
               <CheckCircle2 size={18} />
               <div>
-                <strong>{browserStorageEnabled?'本次紀錄已保存在此瀏覽器！':'本次紀錄已成功保存至本機資料庫！'}</strong>
+                <strong>本次紀錄已成功保存至本機資料庫！</strong>
                 <p style={{ fontSize: 13, marginTop: 4 }}>
                   已妥善儲存運動學特徵與時序，您隨時可以在「紀錄與趨勢」重新查看。
                 </p>
@@ -1040,10 +1039,10 @@ export const MeasurePage: React.FC<MeasurePageProps> = ({
                 <button
                   type="button"
                   className="kb-btn kb-btn-accent"
-                  onClick={() => {if(browserStorageEnabled)window.location.hash='records';else if(savedMeasurementId)onNavigateToInsights(savedMeasurementId)}}
+                  onClick={() => savedMeasurementId && onNavigateToInsights(savedMeasurementId)}
                 >
                   <Sparkles size={18} />
-                  <span>{browserStorageEnabled?'查看已保存紀錄':'查看 ARCI 解讀'}</span>
+                  <span>查看 ARCI 解讀</span>
                   <ArrowRight size={16} />
                 </button>
               )}

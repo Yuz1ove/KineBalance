@@ -12,7 +12,7 @@
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install chromium webkit",
     "preview": "vite preview",
-    "build:hosted": "VITE_STORAGE_MODE=browser npm run build",
+    "build:hosted": "npm run build",
     "test:core": "node --experimental-strip-types --test kbpd-core/tests/*.test.ts"
   },
   "dependencies": {

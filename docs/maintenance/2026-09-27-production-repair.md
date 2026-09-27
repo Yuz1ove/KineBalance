@@ -14,7 +14,7 @@
 2. 舊 loader 將 ErrorEvent 串成 `[object Event]`；失敗的 script 留在 DOM，重試只掛上已錯過的 load/error 事件且沒有 timeout。
 3. 原「真實同儕審查影片回放」實際請求 `/api/fixtures/real-video?disturbed=false`，正式站同樣 HTTP 404。catch 吞錯後進入 step 4，但 analysisResult 為 null，造成空白成果頁。原入口沒有選檔、解碼或逐幀分析。
 4. 原頁面以推估次數、固定 0.88/0.12/0.08/0.05 等指標產生成果，且空相機資料會嘗試補 fixture；保存還能補一個虛構影格。這些路徑已移除。
-5. 正式部署未提供同源 `/api` 保存服務。修補新增**顯式 browser build 模式**，只在此瀏覽器保存；原 API 模式與身分 key 保留且不遷移、不覆寫原 DB。此變更須與產品部署一併審閱。
+5. 正式部署未提供同源 `/api` 保存服務。使用者已指定沿用既有後端，原 API 模式、身分 key、認證與 DB 保留，不建立平行保存系統。已加入 VITE_API_BASE_URL 設定入口；目前等待正式 API URL 與部署位置。
 
 沒有證據支持 CSP 或 CORS 為本次根因。正式回應未送出 CSP；404 是同源 Vercel missing asset。Cloudflare 的舊錯誤資產路徑可快取四小時，因此改用包含套件版本的全新 URL，不能僅在原路徑補檔後假定快取立刻更新。
 
@@ -25,22 +25,24 @@
 - 初始化、權限、設備不支援、解碼、模型及推論錯誤分開；逾時、取消及換來源會停止 tracks、回呼與模型，script 失敗可重新載入。
 - 相機以 20 秒牆鐘時間收束，只接受新來源影格。影片暫停播放後按影片時間每 1/30 秒 seek、解碼、snapshot、send 串行處理，最多 30 秒／900 samples；推論慢不會以牆鐘時間提前結束。這是 30Hz 來源時間取樣，不宣稱能讀出任意編碼的原生每一影格。
 - 影片檔最多 10MB；小於 1 秒、無法解碼及沒有有效手部資料都有明確出口。無有效資料顯示缺值並禁止保存，沒有正常、零異常或虛構分數。
-- `VITE_STORAGE_MODE=browser` 使用同源 IndexedDB，以交易保存原始影格、來源、時間戳及原生分析輸出；本機身份與 API 身份使用不同 key。50MB 配額，10MB 單次輸入；刪除與保存使用相同 transaction，已刪除身份不能晚到寫入。UI 明示不跨裝置同步、清除網站資料會刪除紀錄、影像不保存。ARCI 服務未佈署，不假造 LIVE 解讀。
+- 沿用原 API 與 token，API base 預設同源，可透過 `VITE_API_BASE_URL` 指向經使用者確認的原後端。尚未收到後端位置，保存／讀回保留 NOT_RUN；不以本機或臨時 DB 取代正式後端驗收。
 
 ## 驗證結果
 
 - 單元／UI：169 PASS；原分析核心：32 PASS。TypeScript、production build、15 個資產完整性及 git diff --check 通過。
 - 原始真實影片：Narongrit Kasemsap, *Example Video: Finger tapping for bradykinesia detection*, DOI https://doi.org/10.6084/m9.figshare.28930706.v1 ，CC BY 4.0；11.8 秒、960×540、30fps、2,410,894 bytes。原始影片未裁切或改造用於影片驗收。
-- Chromium 桌面：354/354 有效左手影格、22 cycles、1.88Hz，保存 raw/input/output，reload 及新分頁精確讀回。右手設定同片為 0 有效，禁止保存。
-- WebKit 手機尺寸模擬：354/354 有效左手影格、23 cycles、1.90Hz，保存及讀回完全一致。**不是實體手機**。
+- Chromium 桌面：354/354 有效左手影格、22 cycles、1.88Hz。右手設定同片為 0 有效，禁止保存。
+- WebKit 手機尺寸模擬：354/354 有效左手影格、23 cycles、1.90Hz。**不是實體手機**。
 - 兩個瀏覽器的原生核心均回報 `LOW_EXCURSION_UNCERTAIN`，未放寬門檻；22/23 的差異如實保留，不主張跨瀏覽器數值一致、人工真值或臨床驗證。
-- 真實影片餵入 Chromium **虛擬鏡頭**：133 有效擷取影格、20 秒量測、34 cycles、保存及讀回成功。這只是鏡頭控制鏈工程驗證，不是實體鏡頭／真人操作驗收。
+- 真實影片餵入 Chromium **虛擬鏡頭**：133 有效擷取影格、20 秒量測、34 cycles。這只是鏡頭控制鏈工程驗證，不是實體鏡頭／真人操作驗收。
 - MCP 瀏覽器嘗試實際鏡頭：PERMISSION_DENIED，畫面有明確提示與重試。真人相機從預覽至結果仍為 NOT_RUN。
 - 受控失敗驗證：損壞影片、0.5 秒影片、script abort 後重試、無手部色條影片、再次量測、影片切鏡頭及停止釋放資源。這些受控素材不能當作真實影像準確度證據。
 
+先前暫試過瀏覽器保存 adapter，已依使用者選擇完整撤下。其讀回檔僅保留為歷史工程紀錄，不能列為既有後端或正式保存 PASS。
+
 ## 部署與回退
 
-目前正式網域仍是上述舊 deployment。本輪先提供 preview 與本地 diff；沒有查到先前正式 production promotion 授權，**不得把 preview PASS 寫成正式修復完成**。
+目前正式網域仍是上述舊 deployment。本輪先提供沿用原 API 的 preview 與本地 diff；原後端保存讀回待正式 API URL。沒有查到先前正式 production promotion 授權，**不得把 preview PASS 寫成正式修復完成**。
 
 1. `npm ci --ignore-scripts`，`npm test`，`npm run test:core`，`npm run build:hosted`。
 2. 使用原 Vercel project 產生 preview；傳入 `KBPD_SOURCE_COMMIT`，核對 `/build-identity.json` 的 source SHA 與本機一致。不得部署測試影片、存檔紀錄、.env 或本機 DB。
@@ -50,7 +52,7 @@
 
 ## 五分鐘人工複驗
 
-1. 開正式或指定 preview 的 `/#measure`，重新整理。先到設定建立「此瀏覽器」紀錄身分。
+1. 開正式或指定 preview 的 `/#measure`，重新整理。待既有 API 接通後，沿用原身分或在設定建立測試紀錄身分。
 2. 鏡頭選正確側別，啟用並允許權限；見預覽與骨架後開始 20 秒，拇指食指反覆開合。確認有效結果，保存，到紀錄頁重新整理讀回。
 3. 重新量測，選 1–30 秒／10MB 內的單手影片與正確側別。確認進度持續前進、片尾自動完成；保存後重整讀回。慢速裝置處理可超過影片片長。
 4. 用無手部影片，應顯示無有效資料與缺值、禁止保存。拒絕鏡頭權限應顯示權限提示；允許後按重試。

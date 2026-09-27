@@ -4,7 +4,6 @@
  */
 
 import type { LandmarkFrame, MeasurementOutput, MeasurementSource } from '../../kbpd-core/src/measurement/contracts.ts'
-import { browserStorageEnabled, browserRequest } from './browserStorage'
 import { demoService } from '../demo/demo-service'
 import { generateDemoArciInterpretation } from '../demo/demo-arci'
 
@@ -202,8 +201,8 @@ export interface DeletionReceipt {
   completedAt: string
 }
 
-const STORAGE_KEY_TOKEN = browserStorageEnabled?'kbpd_browser_token':'kbpd_user_token'
-const STORAGE_KEY_USER_ID = browserStorageEnabled?'kbpd_browser_user_id':'kbpd_user_id'
+const STORAGE_KEY_TOKEN = 'kbpd_user_token'
+const STORAGE_KEY_USER_ID = 'kbpd_user_id'
 
 class KbpdApiService {
   private token: string | null = null
@@ -253,7 +252,6 @@ class KbpdApiService {
   }
 
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
-    if(browserStorageEnabled)return browserRequest<T>(path,options,this.token)
     const headers: Record<string, string> = {
       ...(options.headers as Record<string, string> || {}),
     }
@@ -262,14 +260,15 @@ class KbpdApiService {
       headers['Authorization'] = `Bearer ${this.token}`
     }
 
-    const res = await fetch(path, {
+    const apiBase=(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/,'')
+    const res = await fetch(apiBase+path, {
       ...options,
       headers,
     })
 
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({ error: { message: `HTTP ${res.status}` } }))
-      const errorMsg = errBody.error?.message || errBody.error?.code || `HTTP ${res.status}`
+      const errorMsg = errBody.error?.message || errBody.error?.code || (res.status===404?'目前無法連接紀錄服務，資料尚未保存。請稍後重試。':`紀錄服務暫時無法回應（${res.status}），請稍後重試。`)
       throw new Error(errorMsg)
     }
 

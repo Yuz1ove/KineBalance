@@ -15,9 +15,11 @@ page.on('pageerror',e=>logs.push({type:'pageerror',text:e.message}))
 page.on('response',r=>network.push({url:r.url(),status:r.status()}))
 page.on('requestfailed',r=>network.push({url:r.url(),failure:r.failure()}))
 try{
-  console.log('Opening settings');await page.goto(base+'/#settings')
-  await page.getByRole('button',{name:'建立我的紀錄'}).click()
-  await page.getByText('身分已成功確認並加載最新紀錄！').waitFor()
+  if(process.env.ANALYSIS_ONLY!=='1'){
+    console.log('Opening settings');await page.goto(base+'/#settings')
+    await page.getByRole('button',{name:'建立我的紀錄'}).click()
+    await page.getByText('身分已成功確認並加載最新紀錄！').waitFor()
+  }
   await page.goto(base+'/#measure')
   await page.getByRole('button',{name:'下一步：準備事項與影像來源'}).click()
   if(process.env.HAND_SIDE==='LEFT')await page.getByRole('button',{name:'左手 (Left Hand)'}).click()
@@ -33,6 +35,10 @@ try{
   writeFileSync(output+'/result.txt',text)
   await page.screenshot({path:output+'/result.png',fullPage:true})
   assert.equal(await page.getByRole('button',{name:'保存這次紀錄'}).isEnabled(),true,'real video should contain valid hand frames')
+  if(process.env.ANALYSIS_ONLY==='1'){
+    writeFileSync(output+'/receipt.json',JSON.stringify({base,engine:process.env.ENGINE??'chromium',mobileEmulation:process.env.MOBILE==='1',elapsedMs:Date.now()-started,evidenceClass:process.env.CAMERA_TEST==='1'?'VIRTUAL_CAMERA_REPLAY_NOT_PHYSICAL_CAMERA':'REAL_VIDEO_DECODE_AND_ANALYSIS',storageReadback:'NOT_RUN_EXISTING_BACKEND_REQUIRED',physicalCamera:'NOT_RUN',text},null,2))
+    console.log('Real-image analysis complete; existing backend save/readback NOT_RUN')
+  }else{
   await page.getByRole('button',{name:'保存這次紀錄'}).click()
   await page.getByText('本次紀錄已保存在此瀏覽器！',{exact:true}).waitFor()
   const read=()=>page.evaluate(()=>new Promise((resolve,reject)=>{
@@ -53,6 +59,7 @@ try{
   const {acquisition,...quality}=record.measurementOutput.quality
   writeFileSync(output+'/receipt.json',JSON.stringify({base,engine:process.env.ENGINE??'chromium',mobileEmulation:process.env.MOBILE==='1',elapsedMs:Date.now()-started,frames:record.input.frames.length,quality,metrics:record.measurementOutput.metrics,storageReadback:'EXACT_MATCH',physicalCamera:'NOT_RUN',evidenceClass:process.env.CAMERA_TEST==='1'?'VIRTUAL_CAMERA_REPLAY_NOT_PHYSICAL_CAMERA':'REAL_VIDEO_DECODE_AND_ANALYSIS'},null,2))
   console.log(JSON.stringify({frames:record.input.frames.length,validFrames:quality.validFrames,taps:record.measurementOutput.metrics.validTapCount,storageReadback:'EXACT_MATCH'}))
+  }
 }finally{
   await page.screenshot({path:output+'/final-state.png',fullPage:true}).catch(()=>{});writeFileSync(output+'/final-state.txt',await page.locator('body').innerText().catch(()=>''))
   writeFileSync(output+'/console.json',JSON.stringify(logs,null,2));writeFileSync(output+'/network.json',JSON.stringify(network,null,2))
