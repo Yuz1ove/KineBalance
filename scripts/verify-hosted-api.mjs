@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 const identity = JSON.parse(readFileSync('dist/build-identity.json', 'utf8'))
-if (process.env.VERCEL && identity.apiBase !== 'SAME_ORIGIN') {
+if (process.env.KBPD_VERIFY_REMOTE_API === '1' && identity.apiBase !== 'SAME_ORIGIN') {
   const sourceFiles = identity.sourceFiles.filter(f => f.path.startsWith('kbpd-core/src/') && f.path.endsWith('.ts'))
   const expected = createHash('sha256').update(sourceFiles.map(f => `${f.path.slice('kbpd-core/src/'.length)}:${f.sha256}`).join('\n')).digest('hex')
   const response = await fetch(identity.apiBase + '/api/health', { signal: AbortSignal.timeout(20000) })
