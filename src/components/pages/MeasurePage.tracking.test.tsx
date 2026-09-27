@@ -37,7 +37,7 @@ test('SYNTHETIC_TEST_DATA: live UI preview and saved result use the same core me
  const result=toAnalysisOutput(analyzeFingerTapping({sessionId:'test-session',protocolVersion:'KBPD-FT-IMAGE-2',handSide:'RIGHT',mirrored:false,frames}))
  vi.mocked(kbpdApi.saveAnalysis).mockResolvedValue(result)
  await live();fireEvent.click(screen.getByRole('button',{name:'保存這次紀錄'}))
- await screen.findByText('本次紀錄已成功保存至本機資料庫！')
+ await screen.findByText('本次紀錄已成功保存！')
  expect(kbpdApi.saveAnalysis).toHaveBeenCalledWith('test-session','RIGHT',frames,'CAMERA')
  expect(screen.getByText(/有效追蹤比例：100.0%/)).toBeInTheDocument()
  expect(screen.getByRole('img',{name:'原始相對幅度曲線',hidden:true})).toBeInTheDocument()

@@ -993,7 +993,7 @@ export const MeasurePage: React.FC<MeasurePageProps> = ({
             <div className="kb-alert kb-alert-success">
               <CheckCircle2 size={18} />
               <div>
-                <strong>本次紀錄已成功保存至本機資料庫！</strong>
+                <strong>本次紀錄已成功保存！</strong>
                 <p style={{ fontSize: 13, marginTop: 4 }}>
                   已妥善儲存運動學特徵與時序，您隨時可以在「紀錄與趨勢」重新查看。
                 </p>

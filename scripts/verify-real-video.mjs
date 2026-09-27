@@ -40,7 +40,7 @@ try{
     console.log('Real-image analysis complete; existing backend save/readback NOT_RUN')
   }else{
   await page.getByRole('button',{name:'保存這次紀錄'}).click()
-  await page.getByText('本次紀錄已成功保存至本機資料庫！',{exact:true}).waitFor()
+  await page.getByText('本次紀錄已成功保存！',{exact:true}).waitFor()
   const read=()=>page.evaluate(async(apiBase)=>{
     const token=localStorage.getItem('kbpd_user_token')
     const headers={Authorization:`Bearer ${token}`}
