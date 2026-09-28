@@ -826,18 +826,24 @@ a:hover {
 }
 
 .kb-hero-visual-stack {
+  display: grid;
+  gap: 20px;
   position: relative;
   width: 100%;
   max-width: 380px;
 }
 
 .kb-hero-card-main {
+  grid-row: 2;
+  min-width: 0;
   width: 100%;
   background: rgba(255, 255, 255, 0.88);
   box-shadow: 0 16px 36px rgba(48, 55, 49, 0.08), 0 2px 8px rgba(48, 55, 49, 0.03);
 }
 
 .kb-glass-card-header {
+  flex-wrap: wrap;
+  gap: 8px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -861,6 +867,8 @@ a:hover {
 }
 
 .kb-glass-metric-hero {
+  flex-wrap: wrap;
+  gap: 12px;
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
@@ -919,7 +927,9 @@ a:hover {
 }
 
 .kb-hero-card-sub {
-  position: absolute;
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
   z-index: 2;
   padding: 0;
 }
@@ -929,13 +939,13 @@ a:hover {
 }
 
 .kb-hero-card-sub1 {
-  bottom: -20px;
-  left: -16px;
+  grid-row: 3;
+  justify-self: start;
 }
 
 .kb-hero-card-sub2 {
-  top: -16px;
-  right: -12px;
+  grid-row: 1;
+  justify-self: end;
 }
 
 .kb-satellite-content {
@@ -1392,14 +1402,8 @@ a:hover {
   .kb-hero-visual-stack {
     max-width: 100%;
   }
-  .kb-hero-card-sub1 {
-    left: 0;
-    bottom: -16px;
-  }
-  .kb-hero-card-sub2 {
-    right: 0;
-    top: -12px;
-  }
+  .kb-hero-badge-row { flex-wrap: wrap; }
+  .kb-hero-cinematic { padding: 28px 22px; }
 }
 
 /* Print Styles */

@@ -725,9 +725,9 @@ export const MeasurePage: React.FC<MeasurePageProps> = ({
           </div>
 
           {isMeasuring && <section className="kb-live-feedback" aria-label="正式量測即時狀態">
-            <div className="kb-live-count"><span>本次有效開合</span><div><output aria-label="本次有效開合次數" aria-live="polite">{kinematics.tapCount}</output><span> 次</span></div></div>
-            <div className="kb-live-time"><span>{inputMode==='CAMERA'?'剩餘時間':'影片剩餘時間'}</span><div><output aria-label="剩餘秒數">{inputMode==='CAMERA'?countdown:kinematics.progress?Math.max(0,Math.ceil(kinematics.progress.duration-kinematics.progress.seconds)):'—'}</output><span> 秒</span></div></div>
-            <p className="kb-live-tracking" role="status">追蹤狀態：{kinematics.isTracking?'正常':['TRACK_LOST','REACQUIRING'].includes(kinematics.validity??'')?'暫時失追':'請調整手部位置'}{!kinematics.isTracking && ' · 暫停辨識，已完成次數保留'}</p>
+            <div className="kb-live-count"><span><Activity size={16} aria-hidden="true" />本次有效開合</span><div><output aria-label="本次有效開合次數" aria-live="polite">{kinematics.tapCount}</output><span> 次</span></div></div>
+            <div className="kb-live-time"><span><Clock size={16} aria-hidden="true" />{inputMode==='CAMERA'?'剩餘時間':'影片剩餘時間'}</span><div><output aria-label="剩餘秒數">{inputMode==='CAMERA'?countdown:kinematics.progress?Math.max(0,Math.ceil(kinematics.progress.duration-kinematics.progress.seconds)):'—'}</output><span> 秒</span></div></div>
+            <p className="kb-live-tracking" data-tracking={kinematics.isTracking} role="status">追蹤狀態：{kinematics.isTracking?'正常':['TRACK_LOST','REACQUIRING'].includes(kinematics.validity??'')?'暫時失追':'請調整手部位置'}{!kinematics.isTracking && ' · 暫停辨識，已完成次數保留'}</p>
           </section>}
           </div>
 
