@@ -11,7 +11,7 @@ import type {
   TrackingLossInterval,
 } from './contracts.ts'
 
-export const ALGORITHM_VERSION = 'KBPD-DETECTOR-V1.2.0'
+export const ALGORITHM_VERSION = 'KBPD-DETECTOR-V1.2.1'
 export const SCHEMA_VERSION = 'KBPD-MEASUREMENT-OUT-1'
 export const QUALITY_VERSION = 'KBPD-QUALITY-V1.1.0'
 
@@ -95,11 +95,17 @@ export function analyzeFingerTapping(input: MeasurementInput): MeasurementOutput
   let baseline = 0, peak = 0, previousExcursion = 0
   let openThreshold = minimumExcursion, closeThreshold = 0
   let uncertain = false
+  // Require observed support for the open phase, not just one threshold crossing.
+  // 40 ms retains the frozen 5 Hz small-motion fixture (50 ms open support).
+  // This is an engineering impulse guard, not a calibrated human noise threshold.
+  const minimumOpenSupportMs = 40
+  let openSince = 0, lastOpen = 0, segmentHasCycle = false, lastObservedTime = -Infinity
   for (let i=0;i<processedFrames.length;i++) {
     const curr=processedFrames[i]
-    const gap=i>0 && curr.timestampMs-processedFrames[i-1].timestampMs>MAX_TIME_GAP_MS
+    const gap=Number.isFinite(lastObservedTime) && curr.timestampMs-lastObservedTime>MAX_TIME_GAP_MS
+    if(Number.isFinite(curr.timestampMs))lastObservedTime=Math.max(lastObservedTime,curr.timestampMs)
     if (!curr.valid || gap) {
-      state='WAIT_OPEN';cycleStartIdx=-1;previousExcursion=0
+      state='WAIT_OPEN';cycleStartIdx=-1;previousExcursion=0;segmentHasCycle=false;openSince=0;lastOpen=0
       decisions.push({timestampMs:curr.timestampMs,distance:curr.normalizedDistance,state,open:openThreshold,close:closeThreshold,reason:gap?'TIME_GAP_RESET':'INVALID_RESET'})
       if (!curr.valid) continue
     }
@@ -112,23 +118,26 @@ export function analyzeFingerTapping(input: MeasurementInput): MeasurementOutput
       if (d<baseline) {baseline=d;peak=d;peakIdx=i}
       openThreshold=baseline+Math.max(minimumExcursion,previousExcursion*.55)
       if (d>peak) {peak=d;peakIdx=i}
-      if (d>=openThreshold) {state='CLOSING';reason='OPEN_CONFIRMED'}
+      if (d>=openThreshold) {state='CLOSING';openSince=curr.timestampMs;lastOpen=curr.timestampMs;reason='OPEN_CANDIDATE'}
       else if (peak-baseline>1e-8) {reason='BELOW_OPEN_THRESHOLD';if(d<peak && peak-baseline<minimumExcursion)uncertain=true}
     }
     if (state==='CLOSING') {
       if (d>peak) {peak=d;peakIdx=i}
+      if(d>=openThreshold)lastOpen=curr.timestampMs
       closeThreshold=baseline+(peak-baseline)*.35
       if (d<=closeThreshold) {
         const start=processedFrames[cycleStartIdx],top=processedFrames[peakIdx]
         // A return materially below the initial anchor proves it was a partial opening.
-        const initialPartial=cycles.length===0 && d<baseline-minimumExcursion
+        const initialPartial=!segmentHasCycle && d<baseline-minimumExcursion
+        const supported=lastOpen-openSince>=minimumOpenSupportMs
+        if(!supported){reason='TRANSIENT_EXCURSION_REJECTED';uncertain=true}
         if(initialPartial)reason='INITIAL_PARTIAL_REJECTED'
-        if (!initialPartial && top.timestampMs>start.timestampMs && curr.timestampMs>top.timestampMs) {
+        if (supported && !initialPartial && top.timestampMs>start.timestampMs && curr.timestampMs>top.timestampMs) {
           cycles.push({cycleIndex:cycles.length+1,startMs:start.timestampMs,peakMs:top.timestampMs,endMs:curr.timestampMs,
             durationMs:curr.timestampMs-start.timestampMs,maxOpeningDistanceNorm:peak,
             openingSpeedNorm:(peak-start.normalizedDistance)/Math.max(1,top.timestampMs-start.timestampMs)*1000,
             closingSpeedNorm:(peak-d)/Math.max(1,curr.timestampMs-top.timestampMs)*1000})
-          previousExcursion=peak-baseline;reason='COMPLETE_CYCLE'
+          previousExcursion=peak-baseline;segmentHasCycle=true;reason='COMPLETE_CYCLE'
         }
         state='OPENING';cycleStartIdx=i;peakIdx=i;baseline=d;peak=d
       }
@@ -201,6 +210,7 @@ export function analyzeFingerTapping(input: MeasurementInput): MeasurementOutput
   const acceptableForKinematics = unreliabilityReasons.length === 0 // acquisition quality is independent of movement performance
 
   if (imageSpace) limitations.push('IMAGE-2D: z preserved as raw only; planar relative amplitude, not calibrated depth. Causal event thresholds have an uncalibrated 0.01 palm-ratio noise floor; inspect raw curve.')
+  limitations.push('EVENT-SUPPORT: opening requires at least 40 ms of observed above-threshold support before closure; isolated impulses are excluded without smoothing raw coordinates. Sustained model noise cannot always be distinguished from small real motion.')
   limitations.push('Palm scale normalization mitigates depth variance but does not fully correct for off-axis camera angles.')
   limitations.push('Model estimated coordinates are dimensionless ratios, not calibrated millimeter depths.')
   limitations.push('Kinematic measures reflect motor performance in this test and are NOT diagnostic scores or MDS-UPDRS ratings.')

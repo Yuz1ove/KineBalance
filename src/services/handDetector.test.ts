@@ -132,3 +132,41 @@ test('Cancel model initialization then restart does not replace the new model or
  const stale=resultsCallback;service.stopCamera();await service.startCamera(video,canvas)
  stale(hand());expect(service.getCapturedFrames()).toHaveLength(0)
 })
+
+test('Preview motion never creates cycle analysis; the recording starts with only new observations',async()=>{
+ await service.startCamera(video,canvas)
+ for(let i=0;i<90;i++){raw=hand(i%8>=2&&i%8<6?.8:.1);await frame(i*50,i+1)}
+ expect(service.getCapturedFrames()).toHaveLength(60) // bounded tracking-only observations
+ expect(service.getAnalysis()).toBeNull();expect(service.getKinematics().tapCount).toBe(0)
+ expect(service.getKinematics().measurementValidFrames).toBe(0)
+ service.resetRecording();expect(service.getCapturedFrames()).toHaveLength(0)
+ raw=hand(.8);await frame(4500,91)
+ expect(service.getCapturedFrames()).toHaveLength(1);expect(service.getKinematics().tapCount).toBe(0)
+ expect(service.getCapturedFrames()[0].sourceTimestampMs).toBe(4500)
+})
+test('A duplicate callback is consumed once; an old inference callback cannot consume a new frame',async()=>{
+ await service.startCamera(video,canvas);service.resetRecording()
+ await frame(0,1);const old=resultsCallback;old(hand(.8))
+ expect(service.getCapturedFrames()).toHaveLength(1)
+ let release:()=>void=()=>{};send.mockImplementation(()=>new Promise<void>(r=>{release=r}))
+ await frame(50,2);old(hand(.8));expect(service.getCapturedFrames()).toHaveLength(1)
+ resultsCallback(hand(.1));release();await Promise.resolve()
+ expect(service.getCapturedFrames()).toHaveLength(2)
+})
+test('Cancel and reopen erase cycle state; completed capture stays frozen after stop',async()=>{
+ await service.startCamera(video,canvas);service.resetRecording()
+ for(let i=0;i<8;i++){raw=hand(i>=2&&i<6?.8:.1);await frame(i*50,i+1)}
+ expect(service.getKinematics().tapCount).toBe(1)
+ service.stopCamera();const frozen=service.getCapturedFrames();resultsCallback(hand(.8))
+ expect(service.getCapturedFrames()).toEqual(frozen)
+ await service.startCamera(video,canvas);service.resetRecording()
+ expect(service.getKinematics().tapCount).toBe(0);expect(service.getCapturedFrames()).toEqual([])
+ for(let i=0;i<10;i++){raw=hand(.8);await frame(1000+i*50,10+i)}
+ expect(service.getKinematics().tapCount).toBe(0)
+})
+test('Inference arriving beyond the monotonic 20-second boundary cannot enter the recording',async()=>{
+ const now=vi.spyOn(performance,'now').mockReturnValue(100)
+ await service.startCamera(video,canvas);service.resetRecording()
+ await frame(0,1);now.mockReturnValue(20101);await frame(20001,2)
+ expect(service.getCapturedFrames()).toHaveLength(1)
+})

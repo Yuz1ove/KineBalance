@@ -565,7 +565,7 @@ export class PersistentStore {
     const analysisPath = join(this.baseDir, 'analyses', userId, `${sessionId}.json`)
     // V1.2 adds the decision trace; the existing physical record already stores it.
     // Keep the existing schema and legacy records, while returning the full new output.
-    if (measurementOutput?.algorithmVersion.startsWith('KBPD-DETECTOR-V1.2.0')) {
+    if (measurementOutput?.algorithmVersion.startsWith('KBPD-DETECTOR-V1.2.')) {
       if (!existsSync(analysisPath)) throw new StoreError('ANALYSIS_FILE_MISSING', '保存的分析檔不完整')
       const stored = JSON.parse(readFileSync(analysisPath, 'utf8'))
       for (const key of ['sessionId', 'algorithmVersion', 'calculatedAt', 'handSide', 'metrics', 'quality', 'limitations'] as const) {

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { analyzeFingerTapping } from '../kbpd-core/src/measurement/detector.ts'
+import { ALGORITHM_VERSION, analyzeFingerTapping } from '../kbpd-core/src/measurement/detector.ts'
 const base=process.env.BASE_URL??'http://127.0.0.1:4510'
 const output=process.env.EVIDENCE_DIR??'../../output/production-repair-20260927/local-chromium'
 const video=process.env.HAND_VIDEO??'../../output/production-repair-20260927/real-hand-example.mp4'
@@ -24,7 +24,7 @@ const startService=async name=>{
   catch(error){if(attempt===29)throw error;await new Promise(r=>setTimeout(r,500))}
  }
 }
-const waitHealthy=async()=>{for(let i=0;i<30;i++){try{const r=await context.request.get(apiBase+'/api/health',{timeout:3000,headers:{'ngrok-skip-browser-warning':'1'}});if(r.ok()&&(await r.json()).algorithmVersion==='KBPD-DETECTOR-V1.2.0')return}catch{}await new Promise(r=>setTimeout(r,1000))}throw Error('HTTPS API did not recover')}
+const waitHealthy=async()=>{for(let i=0;i<30;i++){try{const r=await context.request.get(apiBase+'/api/health',{timeout:3000,headers:{'ngrok-skip-browser-warning':'1'}});if(r.ok()&&(await r.json()).algorithmVersion===ALGORITHM_VERSION)return}catch{}await new Promise(r=>setTimeout(r,1000))}throw Error('HTTPS API did not recover')}
 if(restartServices)assert.equal(apiBase,'https://sternum-relative-handclasp.ngrok-free.dev','Restart test restricted to dedicated KineBalance endpoint')
 // Label the authorized acceptance session without altering frames or analytical values.
 if(process.env.TEST_IDENTITY)await page.route('**/api/measurements',async route=>{
@@ -42,7 +42,7 @@ try{
   if(backend){
     const health=await context.request.get((apiBase||base)+'/api/health',{headers:{'ngrok-skip-browser-warning':'1'}})
     assert.equal(health.status(),200,'Original backend must be reachable before identity creation')
-    assert.equal((await health.json()).algorithmVersion,'KBPD-DETECTOR-V1.2.0','Do not save against the old V1.0 backend')
+    assert.equal((await health.json()).algorithmVersion,ALGORITHM_VERSION,'Do not save against the old V1.0 backend')
     console.log('Opening settings');await page.goto(base+'/#settings')
     await page.getByRole('button',{name:'建立我的紀錄'}).click()
     await page.getByText('身分已成功確認並加載最新紀錄！').waitFor()

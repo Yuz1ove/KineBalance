@@ -2,6 +2,7 @@
 import type { HandTrackingFrame, HandLandmark } from './kbpdApi'
 import { ALGORITHM_VERSION, analyzeFingerTapping } from '../../kbpd-core/src/measurement/detector.ts'
 import type { MeasurementOutput } from '../../kbpd-core/src/measurement/contracts.ts'
+import { validateMeasurementFrames, type FrameKinematic } from '../../kbpd-core/src/measurement/frame-validity.ts'
 
 export interface CapturePerformance {
   width: number | null
@@ -23,8 +24,9 @@ export interface CapturePerformance {
 }
 export interface RealtimeKinematics {
   tapCount: number
-  currentFrequencyHz: number
-  normalizedDistance: number
+  measurementValidFrames?: number
+  currentFrequencyHz: number | null
+  normalizedDistance: number | null
   isTracking: boolean
   validity?: string
   readyToMeasure?: boolean
@@ -60,6 +62,11 @@ export class HandDetectorService {
   private runId = 0
   private recordingId = 0
   private capturedFrames: HandTrackingFrame[] = []
+  private previewFrames: HandTrackingFrame[] = []
+  private previewFirstMs: number | null = null
+  private lastQuality: FrameKinematic | null = null
+  private hasRecording = false
+  private recordingDeadline = Infinity
   private firstSourceMs: number | null = null
   private lastSourceMs = -Infinity
   private expectedHand: 'LEFT' | 'RIGHT' = 'RIGHT'
@@ -97,15 +104,19 @@ export class HandDetectorService {
     if(hands.initialize) await this.bounded(Promise.resolve(hands.initialize()),run,'MODEL_LOAD_TIMEOUT',30000)
     return hands
   }
-  resetRecording() {
+  resetRecording(durationMs = 20_000) {
     this.recordingId++
     this.recording=true
+    this.hasRecording=true
+    this.recordingDeadline=this.source==='CAMERA'?performance.now()+durationMs:Infinity
     this.capturedFrames=[]
     this.firstSourceMs=null
     this.analysis=null
     this.stableFrames=0
   }
-  getCapturedFrames(): HandTrackingFrame[] { return structuredClone(this.capturedFrames) }
+  // Diagnostic compatibility: preview observations are separate and never analyzed as cycles.
+  // Only the active-recording UI may request these frames for final analysis.
+  getCapturedFrames(): HandTrackingFrame[] { return structuredClone(this.hasRecording?this.capturedFrames:this.previewFrames) }
   getAnalysis(): MeasurementOutput | null { return this.analysis }
   getPerformance(): CapturePerformance {
     const seconds=(performance.now()-this.telemetryStart)/1000
@@ -126,27 +137,30 @@ export class HandDetectorService {
     }
   }
   getKinematics(): RealtimeKinematics {
-    const last=this.analysis?.trace?.frames.at(-1)
-    return {tapCount:this.analysis?.metrics.validTapCount??0,currentFrequencyHz:this.analysis?.metrics.averageFrequencyHz??0,
-      normalizedDistance:last?.valid ? last.normalizedDistance : 0,isTracking:this.isRunning && last?.valid===true,
+    const last=this.lastQuality
+    return {tapCount:this.hasRecording?this.analysis?.metrics.validTapCount??0:0,measurementValidFrames:this.hasRecording?this.analysis?.quality.validFrames??0:0,currentFrequencyHz:this.hasRecording?this.analysis?.metrics.averageFrequencyHz??null:null,
+      normalizedDistance:last?.valid ? last.normalizedDistance : null,isTracking:this.isRunning && last?.valid===true,
       progress:this.source==='REAL_VIDEO'?{processed:this.capturedFrames.length,seconds:(this.capturedFrames.at(-1)?.sourceTimestampMs??0)/1000,duration:this.replayDuration}:undefined,
       validity:last?.validity??'TRACK_LOST',readyToMeasure:this.isRunning && this.stableFrames>=5,performance:this.getPerformance()}
   }
 
   private acceptResult(results:any, sourceMs:number, started:number, completed:number, width:number,height:number) {
-    if(this.firstSourceMs===null)this.firstSourceMs=sourceMs
+    if(this.recording && this.firstSourceMs===null)this.firstSourceMs=sourceMs
+    if(!this.recording && this.previewFirstMs===null)this.previewFirstMs=sourceMs
     const raw=results.multiHandLandmarks?.[0]??[]
     const handedness=results.multiHandedness?.[0]
     // MediaPipe Hands assumes mirrored input; our video pixels are unmirrored (CSS is display-only).
     const side=handedness?.label==='Left'?'RIGHT':handedness?.label==='Right'?'LEFT':'UNKNOWN'
-    const frame:HandTrackingFrame={frameIndex:this.capturedFrames.length,timestampMs:sourceMs-this.firstSourceMs,sourceTimestampMs:sourceMs,
+    const buffer=this.recording?this.capturedFrames:this.previewFrames
+    const frame:HandTrackingFrame={frameIndex:this.inferenceCount,timestampMs:sourceMs-(this.recording?this.firstSourceMs!:this.previewFirstMs!),sourceTimestampMs:sourceMs,
       frameWidth:width,frameHeight:height,inferenceStartedAtMs:started,inferenceCompletedAtMs:completed,
       tracked:raw.length===21,landmarks:raw.map((p:HandLandmark)=>({x:p.x,y:p.y,z:p.z})),handedness:side,handednessScore:handedness?.score}
-    this.capturedFrames.push(frame)
-    // Preview is bounded; the actual recording retains every source frame, including loss.
-    if(!this.recording && this.capturedFrames.length>60)this.capturedFrames.shift()
-    this.analysis=analyzeFingerTapping({sessionId:'preview-session',source:this.source,protocolVersion:'KBPD-FT-IMAGE-2',handSide:this.expectedHand,mirrored:false,displayMirrored:this.source==='CAMERA',frames:this.capturedFrames.map(f=>({...f,tracked:f.tracked===true}))})
-    if(this.analysis.trace?.frames.at(-1)?.valid)this.stableFrames++;else this.stableFrames=0
+    buffer.push(frame)
+    if(!this.recording && buffer.length>60)buffer.shift()
+    const input={sessionId:'active-recording',source:this.source,protocolVersion:'KBPD-FT-IMAGE-2',handSide:this.expectedHand,mirrored:false,displayMirrored:this.source==='CAMERA',frames:buffer.map(f=>({...f,tracked:f.tracked===true}))}
+    if(this.recording){this.analysis=analyzeFingerTapping(input);this.lastQuality=this.analysis.trace?.frames.at(-1)??null}
+    else this.lastQuality=validateMeasurementFrames(input).at(-1)??null
+    if(this.lastQuality?.valid)this.stableFrames++;else this.stableFrames=0
     return raw
   }
 
@@ -180,7 +194,10 @@ export class HandDetectorService {
       if(!ctx)throw new Error('Canvas 2D context unavailable')
       // Snapshot freezes the source image associated with mediaTime while async inference runs.
       const snapshot=document.createElement('canvas'),snapshotCtx=snapshot.getContext('2d')!
-      this.isRunning=true;this.resetRecording();this.recording=!!replay;this.lastSourceMs=-Infinity
+      this.isRunning=true;this.recordingId++;this.recording=false;this.hasRecording=false
+      this.capturedFrames=[];this.previewFrames=[];this.previewFirstMs=null;this.firstSourceMs=null
+      this.analysis=null;this.lastQuality=null;this.stableFrames=0;this.lastSourceMs=-Infinity
+      if(replay)this.resetRecording()
       this.telemetryStart=performance.now();this.renderCount=0;this.inferenceCount=0;this.latencyTotal=0;this.duplicates=0
       this.firstPresented=null;this.lastPresented=null;this.cameraFirstMs=null;this.cameraLastMs=null;this.skipped=0
       let pending:{source:number;start:number;recording:number;width:number;height:number}|null=null
@@ -188,21 +205,23 @@ export class HandDetectorService {
         if(this.watchdog)clearTimeout(this.watchdog)
         this.watchdog=setTimeout(()=>{if(run!==this.runId)return;this.stopCamera();onStage?.(code);onError?.(code)},10000)
       }
-      hands.onResults((results:any)=>{
-        if(!this.isRunning||run!==this.runId||!pending)return
+      const receive=(results:any,observation:NonNullable<typeof pending>)=>{
+        if(!this.isRunning||run!==this.runId||pending!==observation)return
+        // Consume once, before any callback can re-enter or the same result fires twice.
+        pending=null
         update('FIRST_INFERENCE');
-        const completed=performance.now();this.inferenceCount++;this.latencyTotal+=completed-pending.start
-        if(pending.recording!==this.recordingId)return
-        if(canvasElement.width!==pending.width)canvasElement.width=pending.width
-        if(canvasElement.height!==pending.height)canvasElement.height=pending.height
+        const completed=performance.now();this.inferenceCount++;this.latencyTotal+=completed-observation.start
+        if(observation.recording!==this.recordingId || (this.recording && completed>=this.recordingDeadline))return
+        if(canvasElement.width!==observation.width)canvasElement.width=observation.width
+        if(canvasElement.height!==observation.height)canvasElement.height=observation.height
         this.renderCount++
         ctx.clearRect(0,0,canvasElement.width,canvasElement.height)
-        const raw=this.acceptResult(results,pending.source,pending.start,completed,pending.width,pending.height)
+        const raw=this.acceptResult(results,observation.source,observation.start,completed,observation.width,observation.height)
         // One CSS mirror on both video and canvas; no context mirror and no measurement smoothing.
         if(raw.length===21 && raw.every((p:HandLandmark)=>Number.isFinite(p.x)&&Number.isFinite(p.y))) this.drawHandSkeleton(ctx,raw,canvasElement.width,canvasElement.height)
-        const frame=this.capturedFrames.at(-1);if(frame)frame.renderAtMs=performance.now()
+        const frame=(this.recording?this.capturedFrames:this.previewFrames).at(-1);if(frame)frame.renderAtMs=performance.now()
         const k=this.getKinematics();update(k.isTracking?'TRACKING':raw.length?'TRACKING_INVALID':'NO_HAND');onFrameProcessed?.(k)
-      })
+      }
       const schedule=()=>{
         if(!this.isRunning||run!==this.runId||replay)return
         if(typeof videoElement.requestVideoFrameCallback==='function')this.videoFrameId=videoElement.requestVideoFrameCallback((_now,meta)=>void processFrame(meta.mediaTime*1000,meta.presentedFrames))
@@ -224,6 +243,8 @@ export class HandDetectorService {
         if(this.recording && (this.capturedFrames.length>=900 || (this.firstSourceMs!==null && source-this.firstSourceMs>30000))){this.stopCamera();onError?.('CAPTURE_LIMIT');return}
         armWatchdog('INFERENCE_TIMEOUT')
         pending={source,start:performance.now(),recording:this.recordingId,width:snapshot.width,height:snapshot.height}
+        const observation=pending
+        hands.onResults((results:any)=>receive(results,observation))
         try{await hands.send({image:snapshot})}catch(err){if(run===this.runId){console.error('[KineBalance] inference',err);this.stopCamera();onStage?.('INFERENCE_FAILED');onError?.('INFERENCE_FAILED: '+(err instanceof Error?err.message:'手部追蹤中斷'))}return}
         pending=null;if(run!==this.runId)return;if(this.watchdog)clearTimeout(this.watchdog);if(replay)return;armWatchdog('VIDEO_NO_NEW_FRAMES');schedule()
       }
@@ -322,7 +343,7 @@ export class HandDetectorService {
   }
 
   stopCamera() {
-    this.isRunning=false;this.runId++
+    this.isRunning=false;this.recording=false;this.recordingId++;this.runId++
     for(const cancel of [...this.cancellations])cancel()
     if(this.watchdog)clearTimeout(this.watchdog);this.watchdog=null
     if(this.video && this.ended)this.video.removeEventListener('ended',this.ended);this.ended=null

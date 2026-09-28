@@ -61,6 +61,9 @@ export const MeasurePage: React.FC<MeasurePageProps> = ({
   // Step 3: Live measurement states
   const [isCameraActive, setIsCameraActive] = useState(false)
   const [isMeasuring, setIsMeasuring] = useState(false)
+  const [prepareCountdown, setPrepareCountdown] = useState<number | null>(null)
+  const phase = useRef<'IDLE'|'COUNTDOWN'|'RECORDING'|'FINISHED'|'CANCELLED'>('IDLE')
+  const latestKinematics = useRef<RealtimeKinematics | null>(null)
   const [countdown, setCountdown] = useState(20)
   const [kinematics, setKinematics] = useState<RealtimeKinematics>({
     tapCount: 0,
@@ -88,7 +91,7 @@ export const MeasurePage: React.FC<MeasurePageProps> = ({
   // Cleanup camera on unmount or tab switch
   useEffect(() => {
     return () => {
-      uiRun.current++;handDetector.stopCamera()
+      phase.current='CANCELLED';uiRun.current++;handDetector.stopCamera()
       if(replayUrl.current)URL.revokeObjectURL(replayUrl.current)
       if (timerRef.current) clearInterval(timerRef.current)
     }
@@ -104,6 +107,8 @@ export const MeasurePage: React.FC<MeasurePageProps> = ({
 
     const run=++uiRun.current
     setIsStartingCamera(true)
+    phase.current=inputMode==='VIDEO'?'RECORDING':'IDLE'
+    setPrepareCountdown(null);setCapturedFrames([]);latestKinematics.current=null
     setKinematics({tapCount:0,currentFrequencyHz:0,normalizedDistance:0,isTracking:false})
     try {
       if(inputMode==='VIDEO'){
@@ -112,20 +117,24 @@ export const MeasurePage: React.FC<MeasurePageProps> = ({
         replayUrl.current=URL.createObjectURL(videoFile)
       }
       const started=await handDetector.startCamera(videoRef.current, canvasRef.current, (realtime) => {
-        if(run===uiRun.current)setKinematics(realtime)
-      },handSide,(message)=>{if(run!==uiRun.current)return;if(message==='CAPTURE_LIMIT'){void handleFinishRecording();return}setCameraError(cameraMessage(message));setKinematics({tapCount:0,currentFrequencyHz:0,normalizedDistance:0,isTracking:false});setIsCameraActive(false);setIsMeasuring(false);if(timerRef.current)clearInterval(timerRef.current)},stage=>{if(run===uiRun.current)setCameraStage(stage)},inputMode==='VIDEO'?{url:replayUrl.current!,onEnded:()=>{if(run===uiRun.current)void handleFinishRecording()}}:undefined)
+        if(run===uiRun.current){latestKinematics.current=realtime;setKinematics(realtime)}
+      },handSide,(message)=>{if(run!==uiRun.current)return;phase.current='CANCELLED';uiRun.current++;setPrepareCountdown(null);setCameraError(cameraMessage(message));setKinematics({tapCount:0,currentFrequencyHz:null,normalizedDistance:null,isTracking:false});setIsCameraActive(false);setIsMeasuring(false);if(timerRef.current)clearInterval(timerRef.current)},stage=>{if(run===uiRun.current)setCameraStage(stage)},inputMode==='VIDEO'?{url:replayUrl.current!,onEnded:()=>{if(run===uiRun.current)void handleFinishRecording()}}:undefined)
       if(run!==uiRun.current)return
       setIsCameraActive(started)
       if(started && inputMode==='VIDEO')setIsMeasuring(true)
     } catch (err: any) {
       if(run!==uiRun.current)return
       setCameraError(cameraMessage(err.message || '無法開啟相機，請檢查瀏覽器權限設定。'))
+      phase.current='CANCELLED';setIsMeasuring(false)
       setIsCameraActive(false)
     } finally { if(run===uiRun.current)setIsStartingCamera(false) }
   }
 
   // Stop Camera handler
   const handleStopCamera = () => {
+    phase.current='CANCELLED';setPrepareCountdown(null);latestKinematics.current=null
+    setKinematics({tapCount:0,currentFrequencyHz:null,normalizedDistance:null,isTracking:false})
+    setCapturedFrames([]);setRawAnalysis(null);setAnalysisResult(null);pendingMeasurementId.current=null
     uiRun.current++;setIsStartingCamera(false);setCameraStage('CANCELLED')
     setCameraError(null)
     handDetector.stopCamera()
@@ -136,18 +145,29 @@ export const MeasurePage: React.FC<MeasurePageProps> = ({
 
   // Start 20s recording
   const handleStartRecording = () => {
-    if (!kinematics.readyToMeasure) return
+    if (!latestKinematics.current?.readyToMeasure || phase.current==='COUNTDOWN' || phase.current==='RECORDING') return
+    setCameraError(null)
     setSaveSuccess(false);setSavedMeasurementId(null);setSaveError(null)
-    handDetector.resetRecording()
-    setIsMeasuring(true)
-    setCountdown(20)
-
-    const deadline=performance.now()+20000
-    timerRef.current=setInterval(()=>{const remaining=Math.max(0,Math.ceil((deadline-performance.now())/1000));setCountdown(remaining);if(remaining===0){clearInterval(timerRef.current);void handleFinishRecording()}},200)
+    phase.current='COUNTDOWN';setPrepareCountdown(3)
+    const preparationDeadline=performance.now()+3000
+    timerRef.current=setInterval(()=>{
+      const remaining=Math.max(0,Math.ceil((preparationDeadline-performance.now())/1000));setPrepareCountdown(remaining)
+      if(remaining>0)return
+      clearInterval(timerRef.current);setPrepareCountdown(null)
+      if(phase.current!=='COUNTDOWN')return
+      if(!latestKinematics.current?.readyToMeasure){phase.current='IDLE';setCameraError('準備期間追蹤不穩定，尚未開始記錄。請調整手部位置後重新開始。');return}
+      pendingMeasurementId.current=null;setCapturedFrames([]);setRawAnalysis(null);setAnalysisResult(null)
+      handDetector.resetRecording();phase.current='RECORDING';setIsMeasuring(true);setCountdown(20)
+      setKinematics(k=>({...k,tapCount:0,currentFrequencyHz:null,normalizedDistance:null}))
+      const deadline=performance.now()+20000
+      timerRef.current=setInterval(()=>{const left=Math.max(0,Math.ceil((deadline-performance.now())/1000));setCountdown(left);if(left===0){clearInterval(timerRef.current);void handleFinishRecording()}},100)
+    },100)
   }
 
   // Finish recording and transition to review
   const handleFinishRecording = useCallback(async () => {
+    if(phase.current!=='RECORDING')return
+    phase.current='FINISHED';uiRun.current++;setPrepareCountdown(null)
     if (timerRef.current) clearInterval(timerRef.current)
     setIsMeasuring(false)
 
@@ -202,6 +222,16 @@ export const MeasurePage: React.FC<MeasurePageProps> = ({
     { num: 3, label: '進行量測' },
     { num: 4, label: '成果與保存' },
   ]
+
+  const preparationHint = kinematics.readyToMeasure ? '手部已就緒。按下開始後倒數三秒，才會記錄這次量測。' : ({
+    WRONG_HAND:`請換成所選的${handSide==='RIGHT'?'右':'左'}手，或返回調整側別。`,
+    OCCLUDED:'偵測到的手部位置超出畫面。請讓整隻手留在鏡頭內。',
+    TRACK_LOST:'請將所選的手放入畫面，讓鏡頭看清整隻手。',
+    LOW_CONFIDENCE:'目前無法穩定確認手部。請調整位置與光線。',
+    INVALID_GEOMETRY:'手部位置暫時無法可靠判讀。請調整距離，讓整隻手清楚入鏡。',
+    LANDMARK_JUMP:'手部位置變化過大。請先穩定手掌，等待追蹤恢復。',
+    REACQUIRING:'正在重新確認手部，請先保持手掌位置穩定。',
+  } as Record<string,string>)[kinematics.validity??'']??'正在確認手部，請先保持手掌位置穩定。'
 
   return (
     <div className="kb-measure-page">
@@ -585,7 +615,7 @@ export const MeasurePage: React.FC<MeasurePageProps> = ({
               <h2 className="kb-card-title">進行手指開合量測</h2>
               <p className="kb-card-subtitle">
                 側別：{handSide === 'RIGHT' ? '右手' : '左手'} · 來源：
-                {source}
+                {inputMode==='CAMERA'?'鏡頭':'錄影回放'}
               </p>
             </div>
             {isMeasuring && inputMode==='CAMERA' && (
@@ -623,7 +653,7 @@ export const MeasurePage: React.FC<MeasurePageProps> = ({
             </div>
           )}
 
-          {!cameraError && <p role="status">{({IDLE:'尚未開始',VIDEO_LOADING:'正在解碼影片',PERMISSION_WAITING:'等待相機權限回應（最多等候 15 秒；超時不代表權限拒絕）',STREAM_ACQUIRED:'已取得串流',VIDEO_PLAYABLE:'影片可播放',MODEL_LOADING:'正在載入手部追蹤引擎（首次載入可能需 30 秒）',MODEL_READY:'追蹤引擎已就緒，等待首次分析',FIRST_INFERENCE:'已取得首次推論',TRACKING:'有效追蹤',NO_HAND:'尚未偵測到手',TRACKING_INVALID:'手部資料尚未符合量測條件',CANCELLED:'已取消'} as Record<string,string>)[cameraStage]??cameraMessage(cameraStage)}</p>}
+          {!cameraError && !isCameraActive && <p role="status">{({IDLE:'尚未開始',VIDEO_LOADING:'正在解碼影片',PERMISSION_WAITING:'等待相機權限回應（最多等候 15 秒；超時不代表權限拒絕）',STREAM_ACQUIRED:'已取得串流',VIDEO_PLAYABLE:'影片可播放',MODEL_LOADING:'正在載入手部追蹤引擎（首次載入可能需 30 秒）',MODEL_READY:'追蹤引擎已就緒，等待首次分析',FIRST_INFERENCE:'已取得首次推論',TRACKING:'有效追蹤',NO_HAND:'尚未偵測到手',TRACKING_INVALID:'手部資料尚未符合量測條件',CANCELLED:'已取消'} as Record<string,string>)[cameraStage]??cameraMessage(cameraStage)}</p>}
           {inputMode==='VIDEO' && kinematics.progress && <p role="status">分析進度：{Math.min(100,Math.round(kinematics.progress.seconds/kinematics.progress.duration*100))}% · 已分析 {kinematics.progress.processed} 幀 · 影片 {kinematics.progress.seconds.toFixed(1)} / {kinematics.progress.duration.toFixed(1)} 秒。完成時間依裝置效能而定。</p>}
           {isStartingCamera && <button className="kb-btn kb-btn-secondary" onClick={handleStopCamera}>取消啟動</button>}
           {/* Main Video & Canvas Viewport */}
@@ -709,84 +739,20 @@ export const MeasurePage: React.FC<MeasurePageProps> = ({
             )}
           </div>
 
-          {/* Real-time Kinematic Indicators */}
-          {isCameraActive && (
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-                gap: 12,
-                marginBottom: 20,
-              }}
-            >
-              <div
-                style={{
-                  padding: '12px 16px',
-                  background: 'var(--kb-surface-subtle)',
-                  borderRadius: 'var(--kb-radius-md)',
-                  textAlign: 'center',
-                }}
-              >
-                <span style={{ fontSize: 12, color: 'var(--kb-text-secondary)' }}>
-                  暫時計數（完成後確認）
-                </span>
-                <div
-                  style={{
-                    fontSize: 26,
-                    fontWeight: 700,
-                    color: 'var(--kb-text-primary)',
-                  }}
-                >
-                  {kinematics.tapCount}{' '}
-                  <span style={{ fontSize: 13, fontWeight: 400 }}>次</span>
-                </div>
-              </div>
+          {isCameraActive && !isMeasuring && <div className="kb-alert" role="status">
+            <div><strong>{prepareCountdown!==null?`準備倒數 ${prepareCountdown} 秒，尚未記錄`:'鏡頭預覽・尚未開始記錄'}</strong><p>{preparationHint}</p></div>
+          </div>}
+          {isMeasuring && <>
+            <p role="status">{kinematics.isTracking?'手部追蹤中，請依自己的節奏完成開合。':'這段追蹤不足，不會新增次數。'+preparationHint}</p>
+            {inputMode==='CAMERA' && <p>共 20 秒，失追時仍繼續計時；無效區間不計次，不會自動延長。</p>}
+            <details><summary>本次量測詳細資訊</summary>
+              <p>已完成的有效開合：{kinematics.measurementValidFrames?kinematics.tapCount:'—'} 次</p>
+              <p>已完成週期的頻率：{kinematics.currentFrequencyHz??'—'} Hz</p>
+              <p>當前原始指尖距離：{kinematics.normalizedDistance?.toFixed(3)??'—'} 倍掌長</p>
+              <p>原始位置可能隨追蹤略微變動；距離變動不等於完成一次開合。只有完整且通過判定的週期才計次。</p>
+            </details>
+          </>}
 
-              <div
-                style={{
-                  padding: '12px 16px',
-                  background: 'var(--kb-surface-subtle)',
-                  borderRadius: 'var(--kb-radius-md)',
-                  textAlign: 'center',
-                }}
-              >
-                <span style={{ fontSize: 12, color: 'var(--kb-text-secondary)' }}>即時頻率</span>
-                <div
-                  style={{
-                    fontSize: 26,
-                    fontWeight: 700,
-                    color: 'var(--kb-text-primary)',
-                  }}
-                >
-                  {kinematics.isTracking?kinematics.currentFrequencyHz:'—'}{' '}
-                  <span style={{ fontSize: 13, fontWeight: 400 }}>Hz</span>
-                </div>
-              </div>
-
-              <div
-                style={{
-                  padding: '12px 16px',
-                  background: 'var(--kb-surface-subtle)',
-                  borderRadius: 'var(--kb-radius-md)',
-                  textAlign: 'center',
-                }}
-              >
-                <span style={{ fontSize: 12, color: 'var(--kb-text-secondary)' }}>開合幅度</span>
-                <div
-                  style={{
-                    fontSize: 26,
-                    fontWeight: 700,
-                    color: 'var(--kb-text-primary)',
-                  }}
-                >
-                  {kinematics.isTracking ? kinematics.normalizedDistance.toFixed(3) : '—'}{' '}
-                  <span style={{ fontSize: 13, fontWeight: 400 }}>x掌長</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {isCameraActive && <p role="status">{kinematics.readyToMeasure ? '鏡頭與手部追蹤已就緒' : `等待完整手部與所選側別：${kinematics.validity || 'REACQUIRING'}`}</p>}
           {isCameraActive && kinematics.performance && <details><summary>影格與推論效能</summary><p>
             觀察到的影片影格 {kinematics.performance.cameraFps?.toFixed(1) ?? 'UNKNOWN'} FPS ·
             推論 {kinematics.performance.inferenceFps?.toFixed(1) ?? 'UNKNOWN'} FPS ·
@@ -822,7 +788,7 @@ export const MeasurePage: React.FC<MeasurePageProps> = ({
             </button>
 
             <div style={{ display: 'flex', gap: 12 }}>
-              {inputMode==='CAMERA' && isCameraActive && !isMeasuring && (
+              {inputMode==='CAMERA' && isCameraActive && !isMeasuring && prepareCountdown===null && (
                 <button
                   type="button"
                   className="kb-btn kb-btn-primary"
@@ -834,6 +800,7 @@ export const MeasurePage: React.FC<MeasurePageProps> = ({
                 </button>
               )}
 
+              {prepareCountdown!==null && <button type="button" className="kb-btn kb-btn-secondary" onClick={()=>{clearInterval(timerRef.current);phase.current='IDLE';setPrepareCountdown(null)}}>取消倒數</button>}
               {isMeasuring && (
                 <button
                   type="button"
@@ -892,6 +859,7 @@ export const MeasurePage: React.FC<MeasurePageProps> = ({
 
           {getQuality(analysisResult).trackedFrames===0 && <p role="alert">沒有有效手部量測資料，無法產生可用結果或保存。請確認側別、光線及完整手部是否入鏡後重試。</p>}
           {rawAnalysis?.quality.unreliabilityReasons.includes('LOW_EXCURSION_UNCERTAIN') && <p>部分開合幅度不足以可靠確認週期，本次數值僅供動作紀錄參考，不能視為正常或異常判定。</p>}
+          {rawAnalysis && rawAnalysis.quality.validFrames>0 && rawAnalysis.metrics.validTapCount<3 && <p role="status">尚不足三個有效完整週期，頻率與衰減指標保持缺值。可保存原始觀察，或按「重新量測」再試一次。</p>}
           {/* Results Summary Grid */}
           <div
             style={{
@@ -1023,6 +991,7 @@ export const MeasurePage: React.FC<MeasurePageProps> = ({
               className="kb-btn kb-btn-secondary"
               disabled={isSaving}
               onClick={() => {
+                handleStopCamera()
                 setSaveSuccess(false)
                 setStep(2)
               }}

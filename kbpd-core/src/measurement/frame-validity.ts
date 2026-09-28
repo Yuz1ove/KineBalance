@@ -1,6 +1,6 @@
 import type { LandmarkFrame, MeasurementInput, NormalizedLandmark } from './contracts.ts'
 
-export type MeasurementValidity = 'VALID' | 'LOW_CONFIDENCE' | 'OCCLUDED' | 'LANDMARK_JUMP' | 'TRACK_LOST' | 'REACQUIRING' | 'INVALID_TIMESTAMP' | 'INVALID_GEOMETRY' | 'WRONG_HAND'
+export type MeasurementValidity = 'VALID' | 'LOW_CONFIDENCE' | 'OCCLUDED' | 'LANDMARK_JUMP' | 'TRACK_LOST' | 'REACQUIRING' | 'INVALID_TIMESTAMP' | 'DUPLICATE_FRAME' | 'INVALID_GEOMETRY' | 'WRONG_HAND'
 export interface FrameKinematic {
   frameIndex: number
   timestampMs: number
@@ -19,6 +19,8 @@ export function imageDistance(a: NormalizedLandmark, b: NormalizedLandmark, widt
 
 export function validateMeasurementFrames(input: MeasurementInput): FrameKinematic[] {
   let previousTimestamp = -Infinity
+  let previousSource = -Infinity
+  const seenFrames = new Set<number>()
   let previous: LandmarkFrame | undefined
   let reacquiring = false
   let stableFrames = 0
@@ -31,6 +33,13 @@ export function validateMeasurementFrames(input: MeasurementInput): FrameKinemat
       : Math.hypot(a.x-b.x,a.y-b.y,(a.z??0)-(b.z??0)) // explicitly versioned legacy compatibility
     let palmScale=0,rawDistance=0
     const dt = f.timestampMs - previousTimestamp
+    // Preserve the existing conservative contract: discard the open cycle after
+    // a timestamp anomaly, then reacquire; already completed cycles are retained.
+    const staleTime=!Number.isFinite(f.timestampMs) || f.timestampMs<0 || dt<=0
+    const duplicate=seenFrames.has(f.frameIndex) || (f.sourceTimestampMs!==undefined && (!Number.isFinite(f.sourceTimestampMs) || f.sourceTimestampMs<=previousSource))
+    if(staleTime || duplicate){reacquiring=true;stableFrames=0;previous=undefined;return {frameIndex:f.frameIndex,timestampMs:f.timestampMs,rawDistance:0,palmScale:0,normalizedDistance:0,valid:false,validity:staleTime?'INVALID_TIMESTAMP':'DUPLICATE_FRAME',invalidReason:staleTime?'INVALID_TIMESTAMP':'DUPLICATE_FRAME'}}
+    seenFrames.add(f.frameIndex)
+    if(f.sourceTimestampMs!==undefined)previousSource=f.sourceTimestampMs
     if (!Number.isFinite(f.timestampMs) || f.timestampMs < 0 || dt <= 0) validity='INVALID_TIMESTAMP'
     else {
       if (dt > 400 && Number.isFinite(previousTimestamp)) {reacquiring=true;stableFrames=0;previous=undefined}
