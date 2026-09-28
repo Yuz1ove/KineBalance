@@ -86,7 +86,7 @@ test('Only countdown completion starts recording; 20 elapsed seconds finish once
  expect(handDetector.resetRecording).not.toHaveBeenCalled();expect(screen.queryByText('本次量測詳細資訊')).not.toBeInTheDocument()
  await act(async()=>{await vi.advanceTimersByTimeAsync(1)})
  expect(handDetector.resetRecording).toHaveBeenCalledTimes(1)
- expect(screen.getByText('量測倒數：20 秒')).toBeInTheDocument()
+ expect(screen.getByLabelText('剩餘秒數')).toHaveTextContent('20')
  expect(screen.getByText('本次量測詳細資訊').closest('details')).not.toHaveAttribute('open')
  await act(async()=>{await vi.advanceTimersByTimeAsync(20000)})
  expect(screen.getByText('本次量測結果與品質確認')).toBeInTheDocument()
@@ -120,6 +120,55 @@ test('Closing a recording cancels it; reopening and starting again resets instea
  fireEvent.click(screen.getByRole('button',{name:'開始 20 秒量測'}))
  await act(async()=>{await vi.advanceTimersByTimeAsync(3000)})
  expect(handDetector.resetRecording).toHaveBeenCalledTimes(2)
- expect(screen.getByText('量測倒數：20 秒')).toBeInTheDocument()
+ expect(screen.getByLabelText('剩餘秒數')).toHaveTextContent('20')
  expect(kbpdApi.createSession).not.toHaveBeenCalled()
+})
+
+test('Visible counter subscribes to formal core events exactly once, retains losses and freezes/reset at lifecycle boundaries',async()=>{
+ await preview();vi.useFakeTimers()
+ expect(screen.queryByLabelText('本次有效開合次數')).not.toBeInTheDocument()
+ fireEvent.click(screen.getByRole('button',{name:'開始 20 秒量測'}))
+ expect(screen.queryByLabelText('本次有效開合次數')).not.toBeInTheDocument()
+ await act(async()=>{await vi.advanceTimersByTimeAsync(3000)})
+ const count=screen.getByLabelText('本次有效開合次數')
+ expect(count).toHaveTextContent('0');expect(count.closest('details')).toBeNull()
+ expect(screen.getByLabelText('剩餘秒數').closest('details')).toBeNull()
+ const frames=fixtures.fixtures.periodic.frames as any
+ let prior=0,changes=0
+ for(let i=1;i<=frames.length;i++){
+  const result=analyzeFingerTapping({sessionId:'synthetic-prefix',protocolVersion:'KBPD-FT-IMAGE-2',handSide:'RIGHT',mirrored:false,frames:frames.slice(0,i)})
+  const sample={tapCount:result.metrics.validTapCount,measurementValidFrames:result.quality.validFrames,currentFrequencyHz:null,normalizedDistance:.2,isTracking:true,readyToMeasure:true}
+  report(sample);expect(count.textContent).toBe(String(sample.tapCount))
+  report(sample);expect(count.textContent).toBe(String(sample.tapCount))
+  if(sample.tapCount!==prior){expect(sample.tapCount-prior).toBe(1);changes++;prior=sample.tapCount}
+ }
+ expect(changes).toBe(8)
+ for(const validity of ['TRACK_LOST','REACQUIRING','OCCLUDED']){
+  report({tapCount:8,currentFrequencyHz:null,normalizedDistance:null,isTracking:false,validity})
+  expect(count).toHaveTextContent('8');expect(screen.getByText(/暫停辨識，已完成次數保留/)).toBeInTheDocument()
+ }
+ await act(async()=>{await vi.advanceTimersByTimeAsync(1000)})
+ expect(screen.getByLabelText('剩餘秒數')).toHaveTextContent('19')
+ vi.mocked(handDetector.getCapturedFrames).mockReturnValue(frames)
+ fireEvent.click(screen.getByRole('button',{name:'提早結束並計算'}))
+ expect(screen.getByTestId('frozen-live-count')).toHaveTextContent('8 次')
+ report({tapCount:99,isTracking:true});expect(screen.getByTestId('frozen-live-count')).toHaveTextContent('8 次')
+ expect(screen.queryByText(/這項差異尚未釐清/)).not.toBeInTheDocument()
+ fireEvent.click(screen.getByRole('button',{name:'重新量測'}))
+ fireEvent.click(screen.getByRole('button',{name:'進入量測畫面'}))
+ await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'啟用鏡頭預覽'}))})
+ fireEvent.click(screen.getByRole('button',{name:'開始 20 秒量測'}))
+ await act(async()=>{await vi.advanceTimersByTimeAsync(3000)})
+ expect(screen.getByLabelText('本次有效開合次數')).toHaveTextContent('0')
+})
+
+test('A final count discrepancy is visible instead of silently overwriting the last live count',async()=>{
+ await preview();vi.useFakeTimers()
+ fireEvent.click(screen.getByRole('button',{name:'開始 20 秒量測'}))
+ await act(async()=>{await vi.advanceTimersByTimeAsync(3000)})
+ report({tapCount:7,currentFrequencyHz:null,normalizedDistance:.2,isTracking:true})
+ vi.mocked(handDetector.getCapturedFrames).mockReturnValue(fixtures.fixtures.periodic.frames as any)
+ fireEvent.click(screen.getByRole('button',{name:'提早結束並計算'}))
+ expect(screen.getByRole('alert')).toHaveTextContent('量測時計數 7 次，最終有效次數 8 次')
+ expect(screen.getByRole('alert')).toHaveTextContent('没有額外的最終品質篩選'.replace('没','沒'))
 })
