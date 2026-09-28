@@ -170,3 +170,30 @@ test('Inference arriving beyond the monotonic 20-second boundary cannot enter th
  await frame(0,1);now.mockReturnValue(20101);await frame(20001,2)
  expect(service.getCapturedFrames()).toHaveLength(1)
 })
+
+test('WebKit camera: advancing presented frames with zero mediaTime use real currentTime, not a stuck timestamp',async()=>{
+ await service.startCamera(video,canvas);service.resetRecording()
+ for(let i=0;i<17;i++){video.currentTime=1+i*.05;raw=hand(i%8>=2&&i%8<6?.8:.1);await frame(0,i+20)}
+ expect(service.getCapturedFrames()).toHaveLength(17)
+ expect(service.getCapturedFrames()[0].sourceTimestampMs).toBe(1000)
+ expect(service.getCapturedFrames().at(-1)?.timestampMs).toBeCloseTo(800)
+ expect(service.getKinematics().tapCount).toBe(2)
+ // A repeated frame must not be admitted just because the playback clock moved.
+ video.currentTime=2;await frame(0,36);expect(service.getCapturedFrames()).toHaveLength(17)
+})
+test('WebKit fallback neither fabricates frozen frames nor stops an advancing camera after ten seconds',async()=>{
+ vi.useFakeTimers();const errors=vi.fn();await service.startCamera(video,canvas,undefined,'RIGHT',errors);service.resetRecording()
+ for(let i=0;i<120;i++){video.currentTime=1+i*.1;raw=hand(.8);await frame(0,i+10);await vi.advanceTimersByTimeAsync(100)}
+ expect(errors).not.toHaveBeenCalled();expect(service.getCapturedFrames()).toHaveLength(120)
+ expect(service.getKinematics().tapCount).toBe(0)
+ const n=send.mock.calls.length
+ // Frame sequence alone is insufficient without a usable advancing media clock.
+ await frame(0,130);expect(send).toHaveBeenCalledTimes(n)
+ await vi.advanceTimersByTimeAsync(10001);expect(errors).toHaveBeenCalledWith('VIDEO_NO_NEW_FRAMES')
+})
+test('A stream with a working mediaTime cannot duplicate frames or regress when metadata later stalls',async()=>{
+ await service.startCamera(video,canvas);service.resetRecording();video.currentTime=1;await frame(1000,1)
+ video.currentTime=1.05;await frame(1050,1);expect(send).toHaveBeenCalledTimes(1)
+ await frame(1000,2);expect(service.getCapturedFrames()[1].sourceTimestampMs).toBe(1050)
+ video.currentTime=1.1;await frame(1000,3);expect(service.getCapturedFrames()[2].sourceTimestampMs).toBe(1100)
+})

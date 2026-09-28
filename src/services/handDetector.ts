@@ -222,6 +222,7 @@ export class HandDetectorService {
         const frame=(this.recording?this.capturedFrames:this.previewFrames).at(-1);if(frame)frame.renderAtMs=performance.now()
         const k=this.getKinematics();update(k.isTracking?'TRACKING':raw.length?'TRACKING_INVALID':'NO_HAND');onFrameProcessed?.(k)
       }
+      let useCurrentTime = false
       const schedule=()=>{
         if(!this.isRunning||run!==this.runId||replay)return
         if(typeof videoElement.requestVideoFrameCallback==='function')this.videoFrameId=videoElement.requestVideoFrameCallback((_now,meta)=>void processFrame(meta.mediaTime*1000,meta.presentedFrames))
@@ -229,7 +230,22 @@ export class HandDetectorService {
       }
       const processFrame=async(source:number,presented?:number)=>{
         if(!this.isRunning||run!==this.runId)return
-        if(videoElement.readyState<2||!Number.isFinite(source)){schedule();return}
+        if(videoElement.readyState<2){schedule();return}
+        if(presented!==undefined){
+          // WebKit camera streams can report mediaTime=0 for every new frame.
+          // Frame identity must advance independently of either media clock.
+          if(!Number.isSafeInteger(presented)||presented<1||
+            (this.lastPresented!==null&&presented<=this.lastPresented)){
+            this.duplicates++;schedule();return
+          }
+          const currentTimeMs=videoElement.currentTime*1000
+          if(!useCurrentTime && Number.isFinite(currentTimeMs) && currentTimeMs>this.lastSourceMs &&
+            (!Number.isFinite(source)||source<=this.lastSourceMs||(source===0&&currentTimeMs>0))) useCurrentTime=true
+          // Stay on the same real video timeline after fallback; never invent time
+          // from callback counts or wall time, and never accept a frozen clock.
+          if(useCurrentTime)source=currentTimeMs
+        }
+        if(!Number.isFinite(source)){schedule();return}
         if(source<=this.lastSourceMs){this.duplicates++;schedule();return}
         this.lastSourceMs=source
         if(presented!==undefined){

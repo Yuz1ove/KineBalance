@@ -30,7 +30,7 @@ const cameraMessage=(code:string)=>({
   CAMERA_REQUEST_TIMEOUT:'等待相機回應已達 15 秒，已取消本次啟動。這不代表瀏覽器拒絕權限；確認權限後可按重試。',
   PERMISSION_DENIED:'瀏覽器拒絕了相機權限。請確認權限設定後再重試。',DEVICE_NOT_FOUND:'找不到相機設備。',DEVICE_NOT_READABLE:'目前無法讀取相機，請確認是否被其他程式占用。',
   CONSTRAINT_UNSUPPORTED:'設備不支援本次相機設定。',MODEL_LOAD_FAILED:'手部模型載入失敗，請稍後重試。',MODEL_LOAD_TIMEOUT:'手部追蹤引擎載入逾時，已釋放相機。請確認連線後重試。',
-  VIDEO_TOO_SHORT:'影片少於 1 秒，資料不足。請選擇較完整的手部開合影片。',VIDEO_DECODE_FAILED:'無法解碼這段影片。請改用瀏覽器支援的 MP4（H.264）或 WebM，再重新選檔。',VIDEO_PLAY_TIMEOUT:'影片尚無法播放，已停止等候。',VIDEO_NO_NEW_FRAMES:'影片沒有提供新影格，已停止本次擷取。',INFERENCE_FAILED:'手部模型推論中斷，請重試。',INFERENCE_TIMEOUT:'手部模型推論等候逾時，已停止擷取。',
+  VIDEO_TOO_SHORT:'影片少於 1 秒，資料不足。請選擇較完整的手部開合影片。',VIDEO_DECODE_FAILED:'無法解碼這段影片。請改用瀏覽器支援的 MP4（H.264）或 WebM，再重新選檔。',VIDEO_PLAY_TIMEOUT:'影片尚無法播放，已停止等候。',VIDEO_NO_NEW_FRAMES:'影像暫停或沒有新影格，已停止本次擷取。請保持此頁在前景，再按重試。',INFERENCE_FAILED:'手部模型推論中斷，請重試。',INFERENCE_TIMEOUT:'手部模型推論等候逾時，已停止擷取。',
   VIDEO_DURATION_LIMIT:'影片需在 30 秒內，且具有可讀取的時長。',CAPTURE_LIMIT:'已達本次擷取上限。'
 } as Record<string,string>)[code.split(':')[0]]??'無法完成本次量測，請重新選擇來源後重試。'
 
