@@ -24,6 +24,8 @@
 .kb-live-time output { font-size: clamp(28px, 5vw, 40px); }
 .kb-live-tracking { grid-column: 1 / -1; margin: 0; font-size: 14px; line-height: 1.4; }
 @media (max-width: 768px) {
+  .kb-live-view { scroll-margin-block-start: 80px; }
+  .kb-live-view-recording { top: 68px; }
   .kb-live-feedback { padding: 10px 12px; gap: 6px 12px; }
   .kb-live-feedback > div > span { font-size: 14px; }
   .kb-measure-viewport { height: min(34svh, 280px); }

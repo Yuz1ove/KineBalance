@@ -29,24 +29,23 @@ try{
  let readinessRetries=0
  for(;readinessRetries<3;readinessRetries++){
   await start.click()
-  const state=await Promise.race([
-   page.getByLabel('剩餘秒數',{exact:true}).waitFor().then(()=>'recording'),
-   page.getByText(/準備期間追蹤不穩定，尚未開始記錄/).waitFor().then(()=>'not-ready'),
-  ])
-  if(state==='recording')break
+  const started=await page.getByLabel('剩餘秒數',{exact:true}).waitFor({timeout:7000}).then(()=>true,()=>false)
+  if(started)break
  }
  assert.ok(readinessRetries<3,'Real replay must become ready without bypassing readiness')
  const began=Date.now()
  const inView=async()=>{
   const boxes=await Promise.all([page.locator('video'),page.getByLabel('本次有效開合次數',{exact:true}),page.getByLabel('剩餘秒數',{exact:true})].map(x=>x.boundingBox()))
-  const size=page.viewportSize();for(const b of boxes){assert.ok(b && b.x>=0 && b.y>=0 && b.x+b.width<=size.width && b.y+b.height<=size.height-64,'Video, count and timer fit in viewport without expanding or scrolling')}
+  const size=page.viewportSize();const header=await page.locator('.kb-mobile-header').boundingBox();
+  if(header && header.height)assert.ok(boxes[0].y>=header.y+header.height,'Mobile header must not cover the camera');
+  for(const b of boxes){assert.ok(b && b.x>=0 && b.y>=0 && b.x+b.width<=size.width && b.y+b.height<=size.height-64,'Video, count and timer fit in viewport without expanding or scrolling')}
  };await inView()
  const initialTime=Number(await page.getByLabel('剩餘秒數',{exact:true}).innerText())
  const samples=[];for(let i=0;i<8;i++){samples.push(Number(await page.getByLabel('本次有效開合次數',{exact:true}).innerText()));await page.waitForTimeout(350)}
  assert.ok(Number(await page.getByLabel('剩餘秒數',{exact:true}).innerText())<initialTime);await inView()
  for(let i=1;i<samples.length;i++)assert.ok(samples[i]>=samples[i-1],'Completed live cycles must not regress')
  assert.equal(await page.locator('details').filter({has:page.getByText('本次量測詳細資訊',{exact:true})}).getAttribute('open'),null)
- await page.screenshot({path:output+'/recording.png',fullPage:true})
+ await page.screenshot({path:output+'/recording.png',fullPage:false})
  await page.getByText('本次量測結果與品質確認',{exact:true}).waitFor({timeout:35000})
  const duration=Date.now()-began
  assert.ok(duration>=18500&&duration<28000,'Uses elapsed 20 seconds, not frame count or extended loss time')
